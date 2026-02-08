@@ -1,0 +1,20 @@
+{
+  "name": "@tests/bitpro",
+  "version": "1.0.0",
+  "description": "> 一站式 Crypto 量化交易工具：行情监控、策略开发、回测、实盘",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}
