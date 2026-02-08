@@ -3,7 +3,7 @@ import {
   Rocket, Square, Pause, Play, Settings2, Activity, ShieldCheck,
   TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, XCircle,
   Zap, Clock, DollarSign, BarChart3, List, ChevronRight,
-  Eye, Loader2, Wallet, FlaskConical, Radio,
+  Eye, Loader2, Wallet, FlaskConical, Radio, Plus,
 } from 'lucide-react';
 import * as echarts from 'echarts';
 import { liveApi, paperApi } from '../api/client';
@@ -111,7 +111,7 @@ export default function LiveTrading() {
 
   // 策略数据
   const [strategies, setStrategies] = useState<StrategyInfo[]>([]);
-  const [selectedStrategies, setSelectedStrategies] = useState<(string | number)[]>([]);
+  const [selectedStrategy, setSelectedStrategy] = useState<string | number>('');
   const [loading, setLoading] = useState(false);
 
   // 配置表单
@@ -140,35 +140,54 @@ export default function LiveTrading() {
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
 
-  // 模拟盘结果
+  // 模拟盘结果 (当前选中查看的)
   const [paperResult, setPaperResult] = useState<any>(null);
   const [paperLoading, setPaperLoading] = useState(false);
+
+  // 模拟盘实例列表
+  const [paperInstances, setPaperInstances] = useState<any[]>([]);
 
   // 实盘确认对话框
   const [showLiveConfirm, setShowLiveConfirm] = useState(false);
 
   const isDryRun = tradeMode === 'paper';
 
-  // 获取当前选中策略的名称列表
-  const selectedStrategyNames = selectedStrategies.map(sid =>
-    strategies.find(s => s.id === sid)?.name || String(sid)
-  );
-  const selectedStrategyName = selectedStrategyNames.length > 0
-    ? (selectedStrategyNames.length === 1 ? selectedStrategyNames[0] : `${selectedStrategyNames.length} 个策略`)
-    : '';
+  // 获取当前选中策略的中文名称
+  const selectedStrategyName = strategies.find(s => s.id === selectedStrategy)?.name || String(selectedStrategy);
 
   // ---- 切换模式时重置 ----
   const handleModeChange = (mode: TradeMode) => {
-    if (isRunning || isPaused) return; // 运行中不能切换
+    if (isRunning || isPaused) return;
     setTradeMode(mode);
     setStep('select');
     setPreflightResult(null);
     setPaperResult(null);
   };
 
-  // 加载策略列表
+  // 加载模拟盘实例列表
+  const loadPaperInstances = async () => {
+    try {
+      const res = await paperApi.getInstances();
+      setPaperInstances(res.instances || []);
+    } catch (err) {
+      console.error('加载模拟盘实例失败:', err);
+    }
+  };
+
+  // 删除模拟盘实例
+  const handleDeleteInstance = async (instanceId: string) => {
+    try {
+      await paperApi.deleteInstance(instanceId);
+      loadPaperInstances();
+    } catch (err) {
+      console.error('删除实例失败:', err);
+    }
+  };
+
+  // 加载策略列表和实例
   useEffect(() => {
     loadStrategies();
+    loadPaperInstances();
     checkRunningStatus();
   }, []);
 
@@ -205,8 +224,8 @@ export default function LiveTrading() {
         }));
       }
       setStrategies(list);
-      if (res.recommended && selectedStrategies.length === 0) {
-        setSelectedStrategies([res.recommended]);
+      if (res.recommended && !selectedStrategy) {
+        setSelectedStrategy(res.recommended);
       }
     } catch (err) {
       console.error('加载策略列表失败:', err);
@@ -274,38 +293,66 @@ export default function LiveTrading() {
         </div>
       )}
 
-      {/* 已选数量提示 */}
-      {selectedStrategies.length > 0 && isDryRun && (
-        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-2 text-xs text-blue-400 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4" />
-          已选择 {selectedStrategies.length} 个策略 {isDryRun && '（模拟盘支持多策略并行）'}
+      {/* 模拟盘：已运行实例列表 */}
+      {isDryRun && paperInstances.length > 0 && (
+        <div className="bg-crypto-card border border-crypto-border rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <Activity className="w-4 h-4 text-purple-400" />
+              运行中的模拟盘 ({paperInstances.length})
+            </h3>
+            {paperInstances.length > 1 && (
+              <button
+                onClick={async () => { await paperApi.clearInstances(); loadPaperInstances(); }}
+                className="text-[10px] text-gray-500 hover:text-red-400 transition-colors"
+              >全部清空</button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {paperInstances.map((inst: any) => (
+              <div key={inst.instanceId || inst.instance_id} className="bg-crypto-bg rounded-lg p-3 border border-crypto-border">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-white truncate pr-2">{inst.strategyName || inst.strategy_name}</span>
+                  <button
+                    onClick={() => handleDeleteInstance(inst.instanceId || inst.instance_id)}
+                    className="text-gray-600 hover:text-red-400 transition-colors flex-shrink-0"
+                  ><XCircle className="w-3.5 h-3.5" /></button>
+                </div>
+                <div className="text-[10px] text-gray-500 mb-2">{inst.symbol} · {inst.timeframe} · {inst.daysBack || inst.days_back}天</div>
+                <div className="grid grid-cols-3 gap-1 text-center">
+                  <div>
+                    <div className={clsx('text-xs font-bold', (inst.totalReturnPct ?? inst.total_return_pct ?? 0) >= 0 ? 'text-up' : 'text-down')}>
+                      {(inst.totalReturnPct ?? inst.total_return_pct ?? 0).toFixed(1)}%
+                    </div>
+                    <div className="text-[8px] text-gray-600">收益</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-white">{(inst.sharpeRatio ?? inst.sharpe_ratio ?? 0).toFixed(2)}</div>
+                    <div className="text-[8px] text-gray-600">夏普</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-red-300">{(inst.maxDrawdownPct ?? inst.max_drawdown_pct ?? 0).toFixed(1)}%</div>
+                    <div className="text-[8px] text-gray-600">回撤</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {strategies.map((s) => {
           const sid = s.id;
-          const isSelected = selectedStrategies.includes(sid);
+          const isSelected = selectedStrategy === sid;
           const bt = s.backtest;
           const riskLevel = s.riskLevel || s.risk_level;
           const riskColor = riskLevel === '低' ? 'text-green-400' : riskLevel === '中' ? 'text-yellow-400' : riskLevel === '中低' ? 'text-green-300' : riskLevel === '中高' ? 'text-orange-400' : 'text-gray-400';
 
-          const handleToggle = () => {
-            if (isDryRun) {
-              // 模拟盘: 多选
-              setSelectedStrategies(prev =>
-                prev.includes(sid) ? prev.filter(x => x !== sid) : [...prev, sid]
-              );
-            } else {
-              // 实盘: 单选
-              setSelectedStrategies([sid]);
-            }
-          };
-
           return (
             <button
               key={sid}
-              onClick={handleToggle}
+              onClick={() => setSelectedStrategy(sid)}
               className={clsx(
                 'relative p-5 rounded-xl border text-left transition-all',
                 isSelected
@@ -313,16 +360,7 @@ export default function LiveTrading() {
                   : 'border-crypto-border bg-crypto-card hover:border-gray-600'
               )}
             >
-              {/* 多选复选框 */}
-              {isDryRun && (
-                <div className={clsx(
-                  'absolute top-3 left-3 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors',
-                  isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-600 bg-transparent'
-                )}>
-                  {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
-                </div>
-              )}
-              <div className={clsx('absolute top-3 right-3 flex items-center gap-1.5')}>
+              <div className="absolute top-3 right-3 flex items-center gap-1.5">
                 {s.recommended && (
                   <span className="px-2 py-0.5 text-[10px] font-bold bg-green-500/20 text-green-400 rounded-full">推荐</span>
                 )}
@@ -332,9 +370,9 @@ export default function LiveTrading() {
                   </span>
                 )}
               </div>
-              <h3 className={clsx('text-sm font-semibold text-white mb-1.5 pr-24', isDryRun && 'pl-6')}>{s.name || sid}</h3>
-              <p className={clsx('text-xs text-gray-400 leading-relaxed', isDryRun && 'pl-6')}>{s.description}</p>
-              <div className={clsx('mt-2.5 flex items-center gap-3 text-[10px] text-gray-500', isDryRun && 'pl-6')}>
+              <h3 className="text-sm font-semibold text-white mb-1.5 pr-24">{s.name || sid}</h3>
+              <p className="text-xs text-gray-400 leading-relaxed">{s.description}</p>
+              <div className="mt-2.5 flex items-center gap-3 text-[10px] text-gray-500">
                 {s.timeframe && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{s.timeframe}</span>}
                 {s.suitableFor && <span className="flex items-center gap-1"><Zap className="w-3 h-3" />{s.suitableFor}</span>}
               </div>
@@ -369,19 +407,13 @@ export default function LiveTrading() {
         })}
       </div>
 
-      <div className="flex items-center justify-between pt-4">
-        {isDryRun && selectedStrategies.length > 1 && (
-          <button onClick={() => setSelectedStrategies([])} className="text-xs text-gray-500 hover:text-gray-300">
-            清空选择
-          </button>
-        )}
-        <div className="flex-1" />
+      <div className="flex justify-end pt-4">
         <button
-          disabled={selectedStrategies.length === 0}
+          disabled={!selectedStrategy}
           onClick={() => setStep('configure')}
           className={clsx(
             'flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-colors',
-            selectedStrategies.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+            selectedStrategy ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-700 text-gray-500 cursor-not-allowed'
           )}
         >
           下一步: 配置参数<ChevronRight className="w-4 h-4" />
@@ -397,33 +429,18 @@ export default function LiveTrading() {
     setPaperLoading(true);
     setPaperResult(null);
     try {
-      // 多策略并行：为每个选中的策略启动模拟盘
-      const results = await Promise.allSettled(
-        selectedStrategies.map(sid =>
-          paperApi.run({
-            strategy: String(sid),
-            exchange: selectedExchange,
-            symbol: config.symbol,
-            timeframe: config.timeframe,
-            initial_capital: config.initialEquity,
-            stop_loss: 0.05,
-            days_back: 30,
-          })
-        )
-      );
-
-      // 汇总结果
-      const multiResults = results.map((r, idx) => {
-        const sInfo = strategies.find(s => s.id === selectedStrategies[idx]);
-        const name = sInfo?.name || String(selectedStrategies[idx]);
-        if (r.status === 'fulfilled') {
-          return { name, ...r.value };
-        } else {
-          return { name, error: r.reason?.response?.data?.detail || r.reason?.message || '失败' };
-        }
+      const res = await paperApi.run({
+        strategy: String(selectedStrategy),
+        exchange: selectedExchange,
+        symbol: config.symbol,
+        timeframe: config.timeframe,
+        initial_capital: config.initialEquity,
+        stop_loss: 0.05,
+        days_back: 30,
       });
-
-      setPaperResult(selectedStrategies.length === 1 ? multiResults[0] : { multi: true, results: multiResults });
+      setPaperResult(res);
+      // 刷新实例列表
+      loadPaperInstances();
     } catch (err: any) {
       setPaperResult({ error: err?.response?.data?.detail || err.message || '模拟盘失败' });
     } finally {
@@ -573,55 +590,34 @@ export default function LiveTrading() {
             >
               {paperLoading ? <><Loader2 className="w-4 h-4 animate-spin" />运行模拟盘中...</> : <><Eye className="w-4 h-4" />运行模拟盘验证</>}
             </button>
-            {paperResult && !paperResult.error && !paperResult.multi && (
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                <div className="bg-crypto-bg rounded-lg p-2">
-                  <div className={clsx('text-sm font-bold', (paperResult.totalReturnPct ?? paperResult.total_return_pct ?? 0) >= 0 ? 'text-up' : 'text-down')}>
-                    {((paperResult.totalReturnPct ?? paperResult.total_return_pct ?? 0)).toFixed(1)}%
+            {paperResult && !paperResult.error && (
+              <div className="mt-3 space-y-3">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-crypto-bg rounded-lg p-2">
+                    <div className={clsx('text-sm font-bold', (paperResult.totalReturnPct ?? paperResult.total_return_pct ?? 0) >= 0 ? 'text-up' : 'text-down')}>
+                      {((paperResult.totalReturnPct ?? paperResult.total_return_pct ?? 0)).toFixed(1)}%
+                    </div>
+                    <div className="text-[10px] text-gray-500">收益率</div>
                   </div>
-                  <div className="text-[10px] text-gray-500">收益率</div>
+                  <div className="bg-crypto-bg rounded-lg p-2">
+                    <div className="text-sm font-bold text-white">{(paperResult.sharpeRatio ?? paperResult.sharpe_ratio ?? 0).toFixed(2)}</div>
+                    <div className="text-[10px] text-gray-500">夏普比率</div>
+                  </div>
+                  <div className="bg-crypto-bg rounded-lg p-2">
+                    <div className="text-sm font-bold text-red-400">{(paperResult.maxDrawdownPct ?? paperResult.max_drawdown_pct ?? 0).toFixed(1)}%</div>
+                    <div className="text-[10px] text-gray-500">最大回撤</div>
+                  </div>
                 </div>
-                <div className="bg-crypto-bg rounded-lg p-2">
-                  <div className="text-sm font-bold text-white">{(paperResult.sharpeRatio ?? paperResult.sharpe_ratio ?? 0).toFixed(2)}</div>
-                  <div className="text-[10px] text-gray-500">夏普比率</div>
-                </div>
-                <div className="bg-crypto-bg rounded-lg p-2">
-                  <div className="text-sm font-bold text-red-400">{(paperResult.maxDrawdownPct ?? paperResult.max_drawdown_pct ?? 0).toFixed(1)}%</div>
-                  <div className="text-[10px] text-gray-500">最大回撤</div>
-                </div>
+                {/* 继续新建按钮 */}
+                <button
+                  onClick={() => { setStep('select'); setPaperResult(null); }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs hover:bg-blue-600/30 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />再启动一个模拟盘
+                </button>
               </div>
             )}
-            {/* 多策略结果展示 */}
-            {paperResult?.multi && (
-              <div className="mt-3 space-y-2">
-                {paperResult.results.map((r: any, idx: number) => (
-                  <div key={idx} className="bg-crypto-bg rounded-lg p-3">
-                    <div className="text-xs font-semibold text-white mb-2">{r.name}</div>
-                    {r.error ? (
-                      <div className="text-xs text-red-400">{r.error}</div>
-                    ) : (
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <div>
-                          <div className={clsx('text-xs font-bold', (r.totalReturnPct ?? r.total_return_pct ?? 0) >= 0 ? 'text-up' : 'text-down')}>
-                            {(r.totalReturnPct ?? r.total_return_pct ?? 0).toFixed(1)}%
-                          </div>
-                          <div className="text-[9px] text-gray-500">收益率</div>
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-white">{(r.sharpeRatio ?? r.sharpe_ratio ?? 0).toFixed(2)}</div>
-                          <div className="text-[9px] text-gray-500">夏普</div>
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-red-400">{(r.maxDrawdownPct ?? r.max_drawdown_pct ?? 0).toFixed(1)}%</div>
-                          <div className="text-[9px] text-gray-500">最大回撤</div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {paperResult?.error && !paperResult?.multi && (
+            {paperResult?.error && (
               <div className="mt-3 p-2 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400">{paperResult.error}</div>
             )}
           </div>
@@ -648,7 +644,7 @@ export default function LiveTrading() {
     setPreflightResult(null);
     try {
       const res = await liveApi.preFlight({
-        strategy: String(selectedStrategies[0]),
+        strategy: String(selectedStrategy),
         symbol: config.symbol,
         timeframe: config.timeframe,
         capital_pct: 0.1,
@@ -676,10 +672,9 @@ export default function LiveTrading() {
     setLoading(true);
     try {
       // 使用第一个策略 (实盘只支持单策略)
-      const strategyId = selectedStrategies[0];
       await liveApi.configure({
         exchange: selectedExchange,
-        strategy_type: String(strategyId),
+        strategy_type: String(selectedStrategy),
         symbol: config.symbol,
         timeframe: config.timeframe,
         initial_equity: config.initialEquity,

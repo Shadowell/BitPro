@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { 
   RefreshCw, 
   ArrowUpCircle, ArrowDownCircle, X, AlertTriangle, Wallet, ArrowRightLeft,
-  Clock, List, Landmark, BriefcaseBusiness,
+  Clock, List, Landmark, Briefcase,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { marketApi } from '../api/client';
@@ -603,7 +603,7 @@ export default function Trading() {
                   {/* 交易账户 */}
                   <div className="bg-crypto-card border border-crypto-border rounded-xl overflow-hidden">
                     <div className="px-4 py-3 border-b border-crypto-border flex items-center gap-2">
-                      <BriefcaseBusiness className="w-4 h-4 text-emerald-400" />
+                      <Briefcase className="w-4 h-4 text-emerald-400" />
                       <span className="text-sm font-semibold text-white">交易账户</span>
                       <span className="text-[10px] text-gray-500 ml-auto">Trading</span>
                     </div>

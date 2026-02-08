@@ -215,10 +215,7 @@ export const liveApi = {
 // ============================================
 
 export const paperApi = {
-  // 获取可用策略
-  getStrategies: (): Promise<any> => api.get('/paper_trading/strategies'),
-
-  // 运行模拟盘
+  // 运行模拟盘（创建新实例）
   run: (config: {
     strategy: string;
     exchange: string;
@@ -229,9 +226,21 @@ export const paperApi = {
     days_back: number;
   }): Promise<any> => api.post('/paper_trading/run', config),
 
+  // 获取所有实例列表
+  getInstances: (): Promise<any> => api.get('/paper_trading/instances'),
+
+  // 获取实例详情
+  getInstance: (instanceId: string): Promise<any> => api.get(`/paper_trading/instances/${instanceId}`),
+
+  // 删除实例
+  deleteInstance: (instanceId: string): Promise<any> => api.delete(`/paper_trading/instances/${instanceId}`),
+
+  // 清空所有实例
+  clearInstances: (): Promise<any> => api.delete('/paper_trading/instances'),
+
   // 获取信号
-  getSignals: (strategy: string, symbol: string, timeframe: string, limit?: number): Promise<any> =>
-    api.get('/paper_trading/signals', { params: { strategy, symbol, timeframe, limit } }),
+  getSignals: (instanceId?: string, strategy?: string, symbol?: string, timeframe?: string, limit?: number): Promise<any> =>
+    api.get('/paper_trading/signals', { params: { instance_id: instanceId, strategy, symbol, timeframe, limit } }),
 };
 
 // ============================================
