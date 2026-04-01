@@ -8,6 +8,7 @@ import Backtest from './pages/Backtest'
 import Monitor from './pages/Monitor'
 import LiveTrading from './pages/LiveTrading'
 import DataManager from './pages/DataManager'
+import AILab from './pages/AILab'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           <Route path="live" element={<LiveTrading />} />
           <Route path="monitor" element={<Monitor />} />
           <Route path="data" element={<DataManager />} />
+          <Route path="ai-lab" element={<AILab />} />
         </Route>
       </Routes>
     </BrowserRouter>

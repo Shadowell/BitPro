@@ -311,4 +311,34 @@ export const healthApi = {
     api.get('/health/exchanges'),
 };
 
+// ============================================
+// AI Agent API
+// ============================================
+
+export const agentApi = {
+  createTask: (data: {
+    symbol?: string;
+    timeframe?: string;
+    backtest_start?: string;
+    backtest_end?: string;
+    max_iterations?: number;
+    user_prompt?: string;
+    goal?: Record<string, number>;
+  }): Promise<{ task_id: string; status: string; message: string }> =>
+    api.post('/agent/tasks', data),
+
+  listTasks: (): Promise<any[]> => api.get('/agent/tasks'),
+
+  getTask: (taskId: string): Promise<any> => api.get(`/agent/tasks/${taskId}`),
+
+  getIterations: (taskId: string): Promise<any[]> =>
+    api.get(`/agent/tasks/${taskId}/iterations`),
+
+  stopTask: (taskId: string): Promise<any> =>
+    api.post(`/agent/tasks/${taskId}/stop`),
+
+  acceptBest: (taskId: string): Promise<any> =>
+    api.post(`/agent/tasks/${taskId}/accept`),
+};
+
 export default api;

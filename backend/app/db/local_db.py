@@ -383,6 +383,54 @@ class LocalDatabase:
             )
         ''')
         
+        # ============================================
+        # Agent 任务表
+        # ============================================
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS agent_tasks (
+                id TEXT PRIMARY KEY,
+                status TEXT DEFAULT 'pending',
+                goal_criteria TEXT,
+                symbol TEXT,
+                timeframe TEXT,
+                backtest_start TEXT,
+                backtest_end TEXT,
+                max_iterations INTEGER DEFAULT 10,
+                current_iteration INTEGER DEFAULT 0,
+                best_iteration INTEGER,
+                user_prompt TEXT DEFAULT '',
+                created_at TEXT,
+                updated_at TEXT
+            )
+        ''')
+
+        # ============================================
+        # Agent 迭代记录表
+        # ============================================
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS agent_iterations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                iteration INTEGER NOT NULL,
+                strategy_name TEXT,
+                strategy_code TEXT,
+                setup_code TEXT,
+                reasoning TEXT,
+                backtest_metrics TEXT,
+                analysis TEXT,
+                suggestions TEXT,
+                score REAL DEFAULT 0,
+                meets_goal INTEGER DEFAULT 0,
+                error TEXT DEFAULT '',
+                created_at TEXT,
+                FOREIGN KEY (task_id) REFERENCES agent_tasks(id)
+            )
+        ''')
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_agent_iter_task
+            ON agent_iterations(task_id, iteration)
+        ''')
+
         conn.commit()
         conn.close()
     
@@ -1030,6 +1078,109 @@ class LocalDatabase:
             pass
 
         conn.close()
+        return result
+
+    # ============================================
+    # Agent 任务持久化
+    # ============================================
+
+    def save_agent_task(self, task_data: dict):
+        """保存或更新 Agent 任务"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO agent_tasks
+            (id, status, goal_criteria, symbol, timeframe,
+             backtest_start, backtest_end, max_iterations,
+             current_iteration, best_iteration, user_prompt,
+             created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            task_data['id'], task_data['status'],
+            json.dumps(task_data.get('goal_criteria', {})),
+            task_data['symbol'], task_data['timeframe'],
+            task_data['backtest_start'], task_data['backtest_end'],
+            task_data.get('max_iterations', 10),
+            task_data.get('current_iteration', 0),
+            task_data.get('best_iteration'),
+            task_data.get('user_prompt', ''),
+            task_data['created_at'], task_data['updated_at'],
+        ))
+        conn.commit()
+
+    def save_agent_iteration(self, task_id: str, record: dict):
+        """保存一条迭代记录"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO agent_iterations
+            (task_id, iteration, strategy_name, strategy_code, setup_code,
+             reasoning, backtest_metrics, analysis, suggestions,
+             score, meets_goal, error, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            task_id, record['iteration'],
+            record.get('strategy_name', ''),
+            record.get('strategy_code', ''),
+            record.get('setup_code', ''),
+            record.get('reasoning', ''),
+            json.dumps(record.get('backtest_metrics', {})),
+            record.get('analysis', ''),
+            json.dumps(record.get('suggestions', [])),
+            record.get('score', 0),
+            1 if record.get('meets_goal') else 0,
+            record.get('error', ''),
+            record.get('created_at', ''),
+        ))
+        conn.commit()
+
+    def get_agent_tasks(self, limit: int = 50) -> list:
+        """获取 Agent 任务列表"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM agent_tasks ORDER BY created_at DESC LIMIT ?',
+            (limit,),
+        )
+        rows = cursor.fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            if d.get('goal_criteria'):
+                d['goal_criteria'] = json.loads(d['goal_criteria'])
+            result.append(d)
+        return result
+
+    def get_agent_task(self, task_id: str) -> Optional[dict]:
+        """获取单个 Agent 任务"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM agent_tasks WHERE id = ?', (task_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if d.get('goal_criteria'):
+            d['goal_criteria'] = json.loads(d['goal_criteria'])
+        return d
+
+    def get_agent_iterations(self, task_id: str) -> list:
+        """获取某任务的所有迭代记录"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM agent_iterations WHERE task_id = ? ORDER BY iteration',
+            (task_id,),
+        )
+        rows = cursor.fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            if d.get('backtest_metrics'):
+                d['backtest_metrics'] = json.loads(d['backtest_metrics'])
+            if d.get('suggestions'):
+                d['suggestions'] = json.loads(d['suggestions'])
+            result.append(d)
         return result
 
 

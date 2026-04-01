@@ -2,7 +2,7 @@
 API 路由聚合
 """
 from fastapi import APIRouter
-from app.api.endpoints import market, funding, trading, strategy, backtest, monitor, health, websocket, data_sync, auto_trade, paper_trading, live_trading
+from app.api.endpoints import market, funding, trading, strategy, backtest, monitor, health, websocket, data_sync, auto_trade, paper_trading, live_trading, agent
 
 api_router = APIRouter()
 
@@ -38,6 +38,9 @@ api_router.include_router(paper_trading.router, prefix="/paper_trading", tags=["
 
 # 实盘交易系统 (Phase 5)
 api_router.include_router(live_trading.router, prefix="/live", tags=["实盘交易"])
+
+# AI Agent 系统
+api_router.include_router(agent.router, prefix="/agent", tags=["AI Agent"])
 
 # WebSocket
 api_router.include_router(websocket.router, tags=["WebSocket"])

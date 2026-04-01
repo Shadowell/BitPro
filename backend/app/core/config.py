@@ -39,8 +39,12 @@ class Settings(BaseSettings):
     OKX_PASSPHRASE: Optional[str] = None
     OKX_TESTNET: bool = True
     
-    # AI 配置
+    # AI Agent 配置
     QWEN_API_KEY: Optional[str] = None
+    QWEN_MODEL: str = "qwen3.5-flash"
+    QWEN_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    AGENT_MAX_ITERATIONS: int = 10
+    AGENT_CODE_TIMEOUT: int = 120
     
     # Redis 配置 (可选)
     REDIS_URL: Optional[str] = None

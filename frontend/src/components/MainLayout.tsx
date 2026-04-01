@@ -12,6 +12,7 @@ import {
   Radio,
   Database,
   X,
+  Sparkles,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useSettingsStore, type ColorScheme } from '../stores/useSettingsStore';
@@ -25,6 +26,7 @@ const navItems = [
   { path: '/live', icon: Radio, label: '模拟/实盘' },
   { path: '/monitor', icon: Bell, label: '监控' },
   { path: '/data', icon: Database, label: '数据' },
+  { path: '/ai-lab', icon: Sparkles, label: 'AI研发' },
 ];
 
 /** 颜色方案预览卡片 */
