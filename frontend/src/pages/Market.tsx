@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { marketApi } from '../api/client';
-import { useTickerWebSocket } from '../hooks/useWebSocket';
+import { useTickerWebSocket, type RealtimeTicker } from '../hooks/useWebSocket';
 import KlineChart from '../components/KlineChart';
 import OrderBookChart from '../components/OrderBookChart';
 import SymbolSearch from '../components/SymbolSearch';
@@ -51,9 +51,9 @@ export default function Market() {
 
   // 实时价格 & 24h涨跌幅
   const lastKline = klines[klines.length - 1];
-  const currentPrice = (ticker as any)?.last || lastKline?.close || 0;
-  // 后端已统一输出 camelCase
-  const priceChange = (ticker as any)?.changePercent ?? 0;
+  const liveTicker = ticker as RealtimeTicker | null;
+  const currentPrice = liveTicker?.last || lastKline?.close || 0;
+  const priceChange = liveTicker?.changePercent ?? liveTicker?.change_percent ?? 0;
 
   return (
     <div className="p-6 h-full flex flex-col">

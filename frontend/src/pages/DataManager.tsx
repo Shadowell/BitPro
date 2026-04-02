@@ -20,41 +20,13 @@ import {
   Info,
   X,
 } from 'lucide-react';
-import { dataSyncApi } from '../api/client';
+import {
+  dataSyncApi,
+  type DataSyncConfigResponse,
+  type DataSyncMeta,
+  type DataSyncTableStat,
+} from '../api/client';
 import { useStore } from '../stores/useStore';
-
-// ============================================
-// 类型定义
-// ============================================
-
-interface TableStat {
-  tableName: string;
-  timeframe: string;
-  exchange: string;
-  symbol: string;
-  recordCount: number;
-  firstTimestamp: number | null;
-  lastTimestamp: number | null;
-}
-
-interface SyncMeta {
-  exchange: string;
-  symbol: string;
-  timeframe: string;
-  dataType: string;
-  firstTimestamp: number | null;
-  lastTimestamp: number | null;
-  totalRecords: number;
-  status: string | null;
-  lastSyncAt: string | null;
-  errorMessage: string | null;
-}
-
-interface SyncConfig {
-  defaultSymbols: string[];
-  defaultTimeframes: string[];
-  defaultHistoryDays: number;
-}
 
 // ============================================
 // 常量
@@ -137,9 +109,9 @@ function getCoveragePercent(firstTs: number | null, lastTs: number | null, targe
 export default function DataManager() {
   const { selectedExchange } = useStore();
 
-  const [config, setConfig] = useState<SyncConfig | null>(null);
-  const [tableStats, setTableStats] = useState<TableStat[]>([]);
-  const [syncMeta, setSyncMeta] = useState<SyncMeta[]>([]);
+  const [config, setConfig] = useState<DataSyncConfigResponse | null>(null);
+  const [tableStats, setTableStats] = useState<DataSyncTableStat[]>([]);
+  const [syncMeta, setSyncMeta] = useState<DataSyncMeta[]>([]);
   const [totalRecords, setTotalRecords] = useState(0);
   const [totalPairs, setTotalPairs] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
@@ -179,16 +151,15 @@ export default function DataManager() {
         dataSyncApi.getTableStats(),
         dataSyncApi.getStatus(),
       ]);
-      // camelCase (后端中间件转换)
-      setConfig(configRes as any);
-      setTableStats((statsRes as any).tables || []);
-      setTotalRecords((statsRes as any).totalRecords || (statsRes as any).total_records || 0);
-      setTotalPairs((statsRes as any).totalPairs || (statsRes as any).total_pairs || 0);
-      setIsRunning((statusRes as any).isRunning || (statusRes as any).is_running || false);
-      setSyncMeta((statusRes as any).details || []);
+      setConfig(configRes);
+      setTableStats(statsRes.tables || []);
+      setTotalRecords(statsRes.totalRecords || 0);
+      setTotalPairs(statsRes.totalPairs || 0);
+      setIsRunning(statusRes.isRunning || false);
+      setSyncMeta(statusRes.details || []);
 
       // 如果不在运行中，停止轮询
-      const running = (statusRes as any).isRunning || (statusRes as any).is_running || false;
+      const running = statusRes.isRunning || false;
       if (!running && syncing) {
         setSyncing(false);
         showMsg('同步任务已完成', 'success');
@@ -217,6 +188,23 @@ export default function DataManager() {
     if (type !== 'error') setTimeout(() => setSyncMsg(''), 8000);
   };
 
+  const getErrorMessage = (error: unknown): string => {
+    if (typeof error === 'string') return error;
+    if (error && typeof error === 'object') {
+      const e = error as {
+        message?: string;
+        response?: { data?: { error?: { message?: string }; detail?: unknown } };
+      };
+      const envelopeMessage = e.response?.data?.error?.message;
+      if (typeof envelopeMessage === 'string' && envelopeMessage.length > 0) return envelopeMessage;
+      const detail = e.response?.data?.detail;
+      if (typeof detail === 'string' && detail.length > 0) return detail;
+      if (detail && typeof detail === 'object') return JSON.stringify(detail);
+      if (typeof e.message === 'string' && e.message.length > 0) return e.message;
+    }
+    return '请求失败';
+  };
+
   // ============================================
   // 操作
   // ============================================
@@ -225,10 +213,10 @@ export default function DataManager() {
     try {
       setSyncing(true);
       showMsg('全量同步任务已提交，后台拉取最近1年数据...', 'info');
-      await dataSyncApi.startSync({ exchange: selectedExchange, history_days: 365 });
+      await dataSyncApi.startSync({ exchange: selectedExchange, historyDays: 365 });
       setTimeout(loadData, 2000);
-    } catch (e: any) {
-      showMsg(`启动失败: ${e?.response?.data?.detail || e.message}`, 'error');
+    } catch (e) {
+      showMsg(`启动失败: ${getErrorMessage(e)}`, 'error');
       setSyncing(false);
     }
   };
@@ -245,13 +233,13 @@ export default function DataManager() {
         exchange: selectedExchange,
         symbols: syms,
         timeframes: tfs,
-        start_date: customStartDate,
-        end_date: customEndDate,
-        history_days: 365,
+        startDate: customStartDate,
+        endDate: customEndDate,
+        historyDays: 365,
       });
       setTimeout(loadData, 2000);
-    } catch (e: any) {
-      showMsg(`启动失败: ${e?.response?.data?.detail || e.message}`, 'error');
+    } catch (e) {
+      showMsg(`启动失败: ${getErrorMessage(e)}`, 'error');
       setSyncing(false);
     }
   };
@@ -261,16 +249,19 @@ export default function DataManager() {
       const dateHint = startDate ? ` (${startDate} ~ ${endDate || '至今'})` : '';
       showMsg(`正在同步 ${getCoinBase(symbol)} ${TIMEFRAME_LABELS[timeframe] || timeframe}${dateHint}...`, 'info');
       const res = await dataSyncApi.syncOne({
-        exchange: selectedExchange, symbol, timeframe, history_days: 365,
-        start_date: startDate,
-        end_date: endDate,
+        exchange: selectedExchange,
+        symbol,
+        timeframe,
+        historyDays: 365,
+        startDate: startDate,
+        endDate: endDate,
       });
-      const fetched = (res as any).totalFetched ?? (res as any).total_fetched ?? 0;
-      const inserted = (res as any).totalInserted ?? (res as any).total_inserted ?? 0;
+      const fetched = res.totalFetched ?? 0;
+      const inserted = res.totalInserted ?? 0;
       showMsg(`${getCoinBase(symbol)} ${TIMEFRAME_LABELS[timeframe] || timeframe} 完成: 拉取 ${fetched} 条, 新增 ${inserted} 条`, 'success');
       await loadData();
-    } catch (e: any) {
-      showMsg(`同步失败: ${e?.response?.data?.detail || e.message}`, 'error');
+    } catch (e) {
+      showMsg(`同步失败: ${getErrorMessage(e)}`, 'error');
     }
   };
 
@@ -281,10 +272,10 @@ export default function DataManager() {
     if (!window.confirm(`确认删除 ${target} 的数据？此操作不可恢复。`)) return;
     try {
       const res = await dataSyncApi.deleteData({ exchange: selectedExchange, symbol, timeframe });
-      showMsg((res as any).message || '删除完成', 'success');
+      showMsg(res.message || '删除完成', 'success');
       await loadData();
-    } catch (e: any) {
-      showMsg(`删除失败: ${e?.response?.data?.detail || e.message}`, 'error');
+    } catch (e) {
+      showMsg(`删除失败: ${getErrorMessage(e)}`, 'error');
     }
   };
 
@@ -294,8 +285,8 @@ export default function DataManager() {
       showMsg('增量更新已启动（回溯7天补数据）...', 'info');
       await dataSyncApi.dailyUpdate(selectedExchange);
       setTimeout(loadData, 2000);
-    } catch (e: any) {
-      showMsg(`增量更新失败: ${e?.response?.data?.detail || e.message}`, 'error');
+    } catch (e) {
+      showMsg(`增量更新失败: ${getErrorMessage(e)}`, 'error');
       setSyncing(false);
     }
   };
@@ -307,7 +298,7 @@ export default function DataManager() {
   const allTimeframes = config?.defaultTimeframes || ['5m', '15m', '1h', '4h', '1d'];
   const allSymbols: string[] = config?.defaultSymbols || [];
 
-  const statMap = new Map<string, TableStat>();
+  const statMap = new Map<string, DataSyncTableStat>();
   for (const s of tableStats) {
     if (s.exchange !== selectedExchange) continue;
     const key = `${s.symbol}_${s.timeframe}`;
@@ -317,7 +308,7 @@ export default function DataManager() {
     }
   }
 
-  const metaMap = new Map<string, SyncMeta>();
+  const metaMap = new Map<string, DataSyncMeta>();
   for (const m of syncMeta) {
     if (m.exchange !== selectedExchange) continue;
     metaMap.set(`${m.symbol}_${m.timeframe}`, m);
@@ -751,8 +742,8 @@ export default function DataManager() {
                       const count = stat?.recordCount || 0;
                       const hasData = count > 0;
                       const metaStatus = meta?.status || 'idle';
-                      const metaLastSync = meta?.lastSyncAt || (meta as any)?.last_sync_at || null;
-                      const metaError = meta?.errorMessage || (meta as any)?.error_message || null;
+                      const metaLastSync = meta?.lastSyncAt || null;
+                      const metaError = meta?.errorMessage || null;
                       const freshness = getDataFreshness(stat?.lastTimestamp || null);
                       const coverage = getCoveragePercent(stat?.firstTimestamp || null, stat?.lastTimestamp || null, 365);
 

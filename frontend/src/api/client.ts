@@ -1,14 +1,20 @@
-import axios from 'axios';
-import type { Ticker, Kline, OrderBook, FundingRate, FundingOpportunity, Strategy, Alert } from '../types';
+import axios, { type AxiosRequestConfig } from 'axios';
+import type {
+  Ticker,
+  Kline,
+  OrderBook,
+  FundingRate,
+  FundingOpportunity,
+  Strategy,
+} from '../types';
 
-const API_BASE = '/api/v1';
+const API_BASE = '/api/v2';
 
 const api = axios.create({
   baseURL: API_BASE,
   timeout: 30000,
 });
 
-// 响应拦截器
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {
@@ -17,39 +23,99 @@ api.interceptors.response.use(
   }
 );
 
+function snakeToCamel(input: string): string {
+  return input.replace(/_([a-z])/g, (_, s: string) => s.toUpperCase());
+}
+
+function camelToSnake(input: string): string {
+  return input.replace(/[A-Z]/g, (s) => `_${s.toLowerCase()}`);
+}
+
+function camelizeDeep<T = any>(value: any): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => camelizeDeep(item)) as T;
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value).reduce((acc, [key, val]) => {
+      acc[snakeToCamel(key)] = camelizeDeep(val);
+      return acc;
+    }, {} as Record<string, any>) as T;
+  }
+  return value as T;
+}
+
+function snakifyDeep<T = any>(value: any): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => snakifyDeep(item)) as T;
+  }
+  if (value && typeof value === 'object' && !(value instanceof FormData)) {
+    return Object.entries(value).reduce((acc, [key, val]) => {
+      acc[camelToSnake(key)] = snakifyDeep(val);
+      return acc;
+    }, {} as Record<string, any>) as T;
+  }
+  return value as T;
+}
+
+function unwrapEnvelope(raw: any): any {
+  if (raw && typeof raw === 'object' && 'success' in raw && 'data' in raw) {
+    return raw.data;
+  }
+  return raw;
+}
+
+async function getReq<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  const normalized = config ? { ...config, params: snakifyDeep(config.params) } : undefined;
+  const raw = await api.get(url, normalized);
+  return camelizeDeep<T>(unwrapEnvelope(raw));
+}
+
+async function postReq<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  const normalized = config ? { ...config, params: snakifyDeep(config.params) } : undefined;
+  const raw = await api.post(url, snakifyDeep(data), normalized);
+  return camelizeDeep<T>(unwrapEnvelope(raw));
+}
+
+async function putReq<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  const normalized = config ? { ...config, params: snakifyDeep(config.params) } : undefined;
+  const raw = await api.put(url, snakifyDeep(data), normalized);
+  return camelizeDeep<T>(unwrapEnvelope(raw));
+}
+
+async function deleteReq<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  const normalized = config ? { ...config, params: snakifyDeep(config.params) } : undefined;
+  const raw = await api.delete(url, normalized);
+  return camelizeDeep<T>(unwrapEnvelope(raw));
+}
+
 // ============================================
 // 行情 API
 // ============================================
 
 export const marketApi = {
-  // 获取单个交易对行情
   getTicker: (exchange: string, symbol: string): Promise<Ticker> =>
-    api.get('/market/ticker', { params: { exchange, symbol } }),
+    getReq('/market/ticker', { params: { exchange, symbol } }),
 
-  // 获取多个交易对行情
   getTickers: (exchange: string, symbols?: string[]): Promise<Ticker[]> =>
-    api.get('/market/tickers', {
-      params: { exchange, symbols: symbols?.join(',') },
+    getReq('/market/tickers', {
+      params: { exchange, symbols: symbols?.join(','), offset: 0, limit: 500 },
     }),
 
-  // 获取 K 线数据
   getKlines: (
     exchange: string,
     symbol: string,
     timeframe = '1h',
     limit = 100
   ): Promise<Kline[]> =>
-    api.get('/market/klines', {
+    getReq('/market/klines', {
       params: { exchange, symbol, timeframe, limit },
     }),
 
-  // 获取订单簿
   getOrderbook: (exchange: string, symbol: string, limit = 20): Promise<OrderBook> =>
-    api.get('/market/orderbook', { params: { exchange, symbol, limit } }),
+    getReq('/market/orderbook', { params: { exchange, symbol, limit } }),
 
-  // 获取交易对列表
   getSymbols: (exchange: string, quote = 'USDT'): Promise<{ symbols: string[] }> =>
-    api.get('/market/symbols', { params: { exchange, quote } }),
+    getReq('/market/symbols', { params: { exchange, quote } }),
 };
 
 // ============================================
@@ -57,37 +123,83 @@ export const marketApi = {
 // ============================================
 
 export const fundingApi = {
-  // 获取资金费率列表
   getRates: (exchange: string, symbols?: string[]): Promise<FundingRate[]> =>
-    api.get('/funding/rates', {
+    getReq('/funding/rates', {
       params: { exchange, symbols: symbols?.join(',') },
     }),
 
-  // 获取单个交易对资金费率
   getRate: (exchange: string, symbol: string): Promise<FundingRate> =>
-    api.get(`/funding/rate/${symbol}`, { params: { exchange } }),
+    getReq(`/funding/rate/${symbol}`, { params: { exchange } }),
 
-  // 获取资金费率历史
   getHistory: (
     exchange: string,
     symbol: string,
     limit = 100
   ): Promise<{ timestamp: number; rate: number }[]> =>
-    api.get('/funding/history', { params: { exchange, symbol, limit } }),
+    getReq('/funding/history', { params: { exchange, symbol, limit } }),
 
-  // 获取套利机会
   getOpportunities: (
     exchange: string,
     minRate = 0.0001,
     limit = 20
   ): Promise<FundingOpportunity[]> =>
-    api.get('/funding/opportunities', { params: { exchange, min_rate: minRate, limit } }),
+    getReq('/funding/opportunities', { params: { exchange, minRate, limit } }),
 
-  // 获取汇总
   getSummary: (): Promise<{
     exchanges: Record<string, { total: number; avgRate: number }>;
     topOpportunities: FundingOpportunity[];
-  }> => api.get('/funding/summary'),
+  }> => getReq('/funding/summary'),
+};
+
+// ============================================
+// 交易 API
+// ============================================
+
+export const tradingApi = {
+  getBalance: (exchange: string): Promise<{ exchange: string; balance: any[] }> =>
+    getReq('/trading/balance', { params: { exchange } }),
+
+  getBalanceDetail: (exchange: string): Promise<{ exchange: string; trading: any[]; funding: any[] }> =>
+    getReq('/trading/balance/detail', { params: { exchange } }),
+
+  getOpenOrders: (exchange: string, symbol?: string): Promise<{ exchange: string; orders: any[] }> =>
+    getReq('/trading/orders/open', { params: { exchange, symbol } }),
+
+  getOrderHistory: (exchange: string, limit = 50, symbol?: string): Promise<{ exchange: string; orders: any[] }> =>
+    getReq('/trading/orders/history', { params: { exchange, limit, symbol } }),
+
+  cancelOrder: (orderId: string, exchange: string, symbol: string): Promise<{ result: any }> =>
+    deleteReq(`/trading/order/${orderId}`, { params: { exchange, symbol } }),
+
+  transfer: (data: {
+    exchange: string;
+    currency: string;
+    amount: number;
+    fromAccount: string;
+    toAccount: string;
+  }): Promise<any> =>
+    postReq('/trading/transfer', data),
+
+  spotOrder: (data: {
+    exchange: string;
+    symbol: string;
+    side: 'buy' | 'sell';
+    type: 'market' | 'limit';
+    amount: number;
+    price?: number | null;
+  }): Promise<{ order: any; warnings?: string[] }> =>
+    postReq('/trading/spot/order', data),
+
+  futuresOrder: (data: {
+    exchange: string;
+    symbol: string;
+    side: 'long' | 'short';
+    action: 'open' | 'close';
+    amount: number;
+    leverage: number;
+    price?: number | null;
+  }): Promise<{ order: any }> =>
+    postReq('/trading/futures/order', data),
 };
 
 // ============================================
@@ -95,13 +207,10 @@ export const fundingApi = {
 // ============================================
 
 export const strategyApi = {
-  // 获取策略列表
-  getList: (): Promise<Strategy[]> => api.get('/strategy/list'),
+  getList: (): Promise<Strategy[]> => getReq('/strategies'),
 
-  // 获取策略详情
-  get: (id: number): Promise<Strategy> => api.get(`/strategy/${id}`),
+  get: (id: number): Promise<Strategy> => getReq(`/strategies/${id}`),
 
-  // 创建策略
   create: (data: {
     name: string;
     description?: string;
@@ -109,31 +218,24 @@ export const strategyApi = {
     config?: Record<string, unknown>;
     exchange?: string;
     symbols?: string[];
-  }): Promise<Strategy> => api.post('/strategy/create', data),
+  }): Promise<Strategy> => postReq('/strategies', data),
 
-  // 更新策略
   update: (id: number, data: Partial<Strategy>): Promise<Strategy> =>
-    api.put(`/strategy/${id}`, data),
+    putReq(`/strategies/${id}`, data),
 
-  // 删除策略
-  delete: (id: number): Promise<void> => api.delete(`/strategy/${id}`),
+  delete: (id: number): Promise<void> => deleteReq(`/strategies/${id}`),
 
-  // 启动策略
-  start: (id: number): Promise<{ message: string }> =>
-    api.post(`/strategy/${id}/start`),
+  start: (id: number): Promise<{ started: boolean }> => postReq(`/strategies/${id}/start`),
 
-  // 停止策略
-  stop: (id: number): Promise<{ message: string }> =>
-    api.post(`/strategy/${id}/stop`),
+  stop: (id: number): Promise<{ stopped: boolean }> => postReq(`/strategies/${id}/stop`),
 
-  // 获取策略状态
   getStatus: (id: number): Promise<{
-    id: number;
+    strategyId: number;
     name: string;
     status: string;
-    isRunning: boolean;
-    totalPnl: number;
-  }> => api.get(`/strategy/${id}/status`),
+    pnl: number;
+    totalTrades: number;
+  }> => getReq(`/strategies/${id}/status`),
 };
 
 // ============================================
@@ -141,16 +243,32 @@ export const strategyApi = {
 // ============================================
 
 export const monitorApi = {
-  // 获取告警列表
-  getAlerts: (): Promise<Alert[]> => api.get('/monitor/alerts'),
+  getAlerts: (): Promise<any[]> => getReq('/monitor/alerts'),
 
-  // 创建告警
   createAlert: (data: {
     name: string;
     type: string;
+    exchange: string;
     symbol?: string;
-    condition: Record<string, unknown>;
-  }): Promise<Alert> => api.post('/monitor/alert', data),
+    threshold: number;
+    telegramBotToken?: string;
+    telegramChatId?: string;
+  }): Promise<{ id: number }> => postReq('/monitor/alerts', data),
+
+  toggleAlert: (id: number, enabled: boolean): Promise<{ id: number; enabled: boolean }> =>
+    putReq(`/monitor/alerts/${id}`, null, { params: { enabled } }),
+
+  deleteAlert: (id: number): Promise<{ deleted: boolean }> =>
+    deleteReq(`/monitor/alerts/${id}`),
+
+  getRunningStrategies: (): Promise<any[]> =>
+    getReq('/monitor/running-strategies'),
+
+  getLongShortRatio: (exchange: string, symbol: string): Promise<any> =>
+    getReq('/monitor/long-short-ratio', { params: { exchange, symbol } }),
+
+  getOpenInterest: (exchange: string, symbol: string): Promise<any> =>
+    getReq('/monitor/open-interest', { params: { exchange, symbol } }),
 };
 
 // ============================================
@@ -158,56 +276,33 @@ export const monitorApi = {
 // ============================================
 
 export const liveApi = {
-  // 获取可用策略列表
-  getStrategies: (): Promise<any> => api.get('/live/strategies'),
+  getStrategies: (): Promise<any> => getReq('/live/strategies'),
 
-  // 配置实盘系统
   configure: (config: {
-    exchange: string;
-    strategy_type: string;
-    symbol: string;
-    timeframe: string;
-    initial_equity: number;
-    dry_run: boolean;
-    loop_interval?: number;
-    strategy_config?: Record<string, unknown>;
-    risk_config?: Record<string, unknown>;
-  }): Promise<any> => api.post('/live/configure', config),
+    [key: string]: unknown;
+  }): Promise<any> => postReq('/live/configure', config),
 
-  // 启动
-  start: (): Promise<any> => api.post('/live/start'),
+  start: (): Promise<any> => postReq('/live/start'),
 
-  // 停止
-  stop: (): Promise<any> => api.post('/live/stop'),
+  stop: (): Promise<any> => postReq('/live/stop'),
 
-  // 暂停
-  pause: (): Promise<any> => api.post('/live/pause'),
+  pause: (): Promise<any> => postReq('/live/pause'),
 
-  // 恢复
-  resume: (): Promise<any> => api.post('/live/resume'),
+  resume: (): Promise<any> => postReq('/live/resume'),
 
-  // 监控仪表盘
-  getDashboard: (): Promise<any> => api.get('/live/dashboard'),
+  getDashboard: (): Promise<any> => getReq('/live/dashboard'),
 
-  // 交易事件
   getEvents: (limit = 50, eventType?: string): Promise<any> =>
-    api.get('/live/events', { params: { limit, event_type: eventType } }),
+    getReq('/live/events', { params: { limit, eventType } }),
 
-  // 权益曲线
-  getEquityCurve: (): Promise<any> => api.get('/live/equity_curve'),
+  getEquityCurve: (): Promise<any> => getReq('/live/equity_curve'),
 
-  // 飞行检查
   preFlight: (config: {
-    strategy: string;
-    symbol: string;
-    timeframe: string;
-    capital_pct: number;
-    total_capital: number;
-  }): Promise<any> => api.post('/live/pre_flight', config),
+    [key: string]: unknown;
+  }): Promise<any> => postReq('/live/pre_flight', config),
 
-  // 测试 Telegram
   testTelegram: (message: string): Promise<any> =>
-    api.post('/live/test_telegram', { message }),
+    postReq('/live/test_telegram', { message }),
 };
 
 // ============================================
@@ -215,90 +310,149 @@ export const liveApi = {
 // ============================================
 
 export const paperApi = {
-  // 运行模拟盘（创建新实例）
   run: (config: {
-    strategy: string;
-    exchange: string;
-    symbol: string;
-    timeframe: string;
-    initial_capital: number;
-    stop_loss: number;
-    days_back: number;
-  }): Promise<any> => api.post('/paper_trading/run', config),
+    [key: string]: unknown;
+  }): Promise<any> => postReq('/paper-trading/run', config),
 
-  // 获取所有实例列表
-  getInstances: (): Promise<any> => api.get('/paper_trading/instances'),
+  getInstances: (): Promise<any> => getReq('/paper-trading/instances'),
 
-  // 获取实例详情
-  getInstance: (instanceId: string): Promise<any> => api.get(`/paper_trading/instances/${instanceId}`),
+  getInstance: (instanceId: string): Promise<any> => getReq(`/paper-trading/instances/${instanceId}`),
 
-  // 删除实例
-  deleteInstance: (instanceId: string): Promise<any> => api.delete(`/paper_trading/instances/${instanceId}`),
+  deleteInstance: (instanceId: string): Promise<any> => deleteReq(`/paper-trading/instances/${instanceId}`),
 
-  // 清空所有实例
-  clearInstances: (): Promise<any> => api.delete('/paper_trading/instances'),
+  clearInstances: (): Promise<any> => deleteReq('/paper-trading/instances'),
 
-  // 获取信号
   getSignals: (instanceId?: string, strategy?: string, symbol?: string, timeframe?: string, limit?: number): Promise<any> =>
-    api.get('/paper_trading/signals', { params: { instance_id: instanceId, strategy, symbol, timeframe, limit } }),
+    getReq('/paper-trading/signals', { params: { instanceId: instanceId, strategy, symbol, timeframe, limit } }),
 };
 
 // ============================================
 // 数据管理 API
 // ============================================
 
+export interface DataSyncMeta {
+  exchange: string;
+  symbol: string;
+  timeframe: string;
+  dataType: string;
+  firstTimestamp: number | null;
+  lastTimestamp: number | null;
+  totalRecords: number;
+  status: string | null;
+  lastSyncAt: string | null;
+  errorMessage: string | null;
+  updatedAt?: string | null;
+}
+
+export interface DataSyncStatusResponse {
+  isRunning: boolean;
+  currentJob: {
+    exchange: string | null;
+    status: string | null;
+    totalFetched: number;
+    totalInserted: number;
+    errors: number;
+  } | null;
+  summary: {
+    totalRecords: number;
+    exchanges: string[];
+    symbolsCount: number;
+    pairs: number;
+  };
+  details: DataSyncMeta[];
+}
+
+export interface DataSyncConfigResponse {
+  defaultSymbols: string[];
+  defaultTimeframes: string[];
+  defaultHistoryDays: number;
+}
+
+export interface DataSyncTableStat {
+  tableName: string;
+  timeframe: string;
+  exchange: string;
+  symbol: string;
+  recordCount: number;
+  firstTimestamp: number | null;
+  lastTimestamp: number | null;
+}
+
+export interface DataSyncTableStatsResponse {
+  tables: DataSyncTableStat[];
+  totalRecords: number;
+  totalPairs: number;
+}
+
+export interface DataSyncStartRequest {
+  exchange?: string;
+  symbols?: string[];
+  timeframes?: string[];
+  historyDays?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface DataSyncStartResponse {
+  message?: string;
+  exchange?: string;
+  symbols?: string[];
+  timeframes?: string[];
+  historyDays?: number;
+}
+
+export interface DataSyncSyncOneRequest {
+  exchange?: string;
+  symbol: string;
+  timeframe: string;
+  startDate?: string;
+  endDate?: string;
+  historyDays?: number;
+}
+
+export interface DataSyncSyncOneResponse {
+  exchange: string;
+  symbol: string;
+  timeframe: string;
+  status: string;
+  totalFetched: number;
+  totalInserted: number;
+  error?: string | null;
+  elapsedSeconds?: number | null;
+}
+
+export interface DataSyncDeleteRequest {
+  exchange?: string;
+  symbol?: string;
+  timeframe?: string;
+}
+
+export interface DataSyncDeleteResponse {
+  message: string;
+  deleted: number;
+}
+
 export const dataSyncApi = {
-  // 获取同步状态
-  getStatus: (): Promise<any> => api.get('/data_sync/status'),
+  getStatus: (): Promise<DataSyncStatusResponse> => getReq('/sync/status'),
 
-  // 获取配置
-  getConfig: (): Promise<{
-    default_symbols: string[];
-    default_timeframes: string[];
-    default_history_days: number;
-  }> => api.get('/data_sync/config'),
+  getConfig: (): Promise<DataSyncConfigResponse> => getReq('/sync/config'),
 
-  // 获取已同步数据清单
-  getData: (exchange?: string): Promise<any[]> =>
-    api.get('/data_sync/data', { params: { exchange } }),
+  getData: (exchange?: string): Promise<Array<Record<string, unknown>>> =>
+    getReq('/sync/data', { params: { exchange } }),
 
-  // 获取分表统计
-  getTableStats: (): Promise<{
-    tables: any[];
-    total_records: number;
-    total_pairs: number;
-  }> => api.get('/data_sync/table_stats'),
+  getTableStats: (): Promise<DataSyncTableStatsResponse> => getReq('/sync/table-stats'),
 
-  // 启动批量同步
-  startSync: (data: {
-    exchange?: string;
-    symbols?: string[];
-    timeframes?: string[];
-    history_days?: number;
-    start_date?: string;
-    end_date?: string;
-  }): Promise<any> => api.post('/data_sync/start', data),
+  startSync: (data: DataSyncStartRequest): Promise<DataSyncStartResponse> =>
+    postReq('/sync/start', data),
 
-  // 同步单个交易对
-  syncOne: (data: {
-    exchange?: string;
-    symbol: string;
-    timeframe: string;
-    start_date?: string;
-    end_date?: string;
-    history_days?: number;
-  }): Promise<any> => api.post('/data_sync/sync_one', data),
+  syncOne: (data: DataSyncSyncOneRequest): Promise<DataSyncSyncOneResponse> =>
+    postReq('/sync/sync-one', data),
 
-  // 每日增量更新
-  dailyUpdate: (exchange?: string): Promise<any> =>
-    api.post('/data_sync/daily_update', null, { params: { exchange } }),
+  dailyUpdate: (exchange?: string): Promise<DataSyncStartResponse> =>
+    postReq('/data_sync/daily_update', null, { params: { exchange } }),
 
-  // 删除数据
-  deleteData: (data: {
-    exchange?: string;
-    symbol?: string;
-    timeframe?: string;
-  }): Promise<any> => api.post('/data_sync/delete', data),
+  deleteData: (data: DataSyncDeleteRequest): Promise<DataSyncDeleteResponse> =>
+    postReq('/data_sync/delete', data),
 };
 
 // ============================================
@@ -306,9 +460,9 @@ export const dataSyncApi = {
 // ============================================
 
 export const healthApi = {
-  check: (): Promise<{ status: string }> => api.get('/health'),
+  check: (): Promise<{ status: string }> => getReq('/system/health'),
   checkExchanges: (): Promise<{ exchanges: Record<string, string> }> =>
-    api.get('/health/exchanges'),
+    getReq('/system/exchanges'),
 };
 
 // ============================================
@@ -317,28 +471,33 @@ export const healthApi = {
 
 export const agentApi = {
   createTask: (data: {
-    symbol?: string;
-    timeframe?: string;
-    backtest_start?: string;
-    backtest_end?: string;
-    max_iterations?: number;
-    user_prompt?: string;
-    goal?: Record<string, number>;
-  }): Promise<{ task_id: string; status: string; message: string }> =>
-    api.post('/agent/tasks', data),
+    [key: string]: unknown;
+  }): Promise<{ taskId: string; status: string; message: string }> =>
+    postReq('/agent/tasks', data),
 
-  listTasks: (): Promise<any[]> => api.get('/agent/tasks'),
+  listTasks: (): Promise<any[]> => getReq('/agent/tasks'),
 
-  getTask: (taskId: string): Promise<any> => api.get(`/agent/tasks/${taskId}`),
+  getTask: (taskId: string): Promise<any> => getReq(`/agent/tasks/${taskId}`),
 
   getIterations: (taskId: string): Promise<any[]> =>
-    api.get(`/agent/tasks/${taskId}/iterations`),
+    getReq(`/agent/tasks/${taskId}/iterations`),
 
   stopTask: (taskId: string): Promise<any> =>
-    api.post(`/agent/tasks/${taskId}/stop`),
+    postReq(`/agent/tasks/${taskId}/stop`),
 
   acceptBest: (taskId: string): Promise<any> =>
-    api.post(`/agent/tasks/${taskId}/accept`),
+    postReq(`/agent/tasks/${taskId}/accept`),
+};
+
+// ============================================
+// 回测 API
+// ============================================
+
+export const backtestApi = {
+  runSync: (data: Record<string, unknown>): Promise<any> =>
+    postReq('/backtest/run_sync', data),
+  getStrategies: (): Promise<Record<string, unknown>> =>
+    getReq('/backtest/strategies'),
 };
 
 export default api;

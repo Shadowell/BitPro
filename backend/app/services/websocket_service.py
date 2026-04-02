@@ -115,13 +115,18 @@ class ConnectionManager:
             "timestamp": int(datetime.now().timestamp() * 1000)
         })
         
-        dead_connections = []
-        for websocket in self.subscriptions[sub_key]:
+        subscribers = list(self.subscriptions[sub_key])
+
+        async def _send_one(websocket: WebSocket):
             try:
                 await websocket.send_text(message)
+                return None
             except Exception as e:
                 logger.warning(f"Failed to send message: {e}")
-                dead_connections.append(websocket)
+                return websocket
+
+        results = await asyncio.gather(*(_send_one(ws) for ws in subscribers), return_exceptions=False)
+        dead_connections = [ws for ws in results if ws is not None]
         
         # 清理失效连接
         for ws in dead_connections:
@@ -146,6 +151,14 @@ class ConnectionManager:
             "connections": len(self.active_connections),
             "subscriptions": {k: len(v) for k, v in self.subscriptions.items()}
         }
+
+    async def get_subscription_keys(self, prefix: Optional[str] = None) -> List[str]:
+        """获取订阅键快照，避免遍历期间字典变更。"""
+        async with self._lock:
+            keys = list(self.subscriptions.keys())
+        if prefix:
+            return [k for k in keys if k.startswith(prefix)]
+        return keys
 
 
 class RealtimeDataService:
@@ -183,32 +196,27 @@ class RealtimeDataService:
     async def _ticker_loop(self):
         """行情推送循环"""
         from app.exchange import exchange_manager
-        
+
+        async def _publish_one(sub_key: str):
+            parts = sub_key.split(":", 2)
+            if len(parts) < 3:
+                return
+            exchange_name, symbol = parts[1], parts[2]
+            exchange = exchange_manager.get_exchange(exchange_name)
+            if not exchange:
+                return
+            try:
+                ticker = await asyncio.to_thread(exchange.fetch_ticker, symbol)
+                await self.manager.broadcast("ticker", exchange_name, symbol, ticker)
+            except Exception as e:
+                logger.warning(f"Failed to fetch ticker {symbol}: {e}")
+
         while self._running:
             try:
-                # 检查有哪些订阅
-                ticker_subs = [k for k in self.manager.subscriptions.keys() 
-                              if k.startswith("ticker:")]
-                
-                for sub_key in ticker_subs:
-                    parts = sub_key.split(":")
-                    if len(parts) < 3:
-                        continue
-                    
-                    _, exchange_name, symbol = parts[0], parts[1], parts[2]
-                    
-                    try:
-                        exchange = exchange_manager.get_exchange(exchange_name)
-                        if exchange:
-                            ticker = exchange.fetch_ticker(symbol)
-                            await self.manager.broadcast(
-                                "ticker", exchange_name, symbol, ticker
-                            )
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch ticker {symbol}: {e}")
-                
+                ticker_subs = await self.manager.get_subscription_keys("ticker:")
+                if ticker_subs:
+                    await asyncio.gather(*(_publish_one(sub_key) for sub_key in ticker_subs))
                 await asyncio.sleep(2)  # 2秒更新一次
-                
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -236,29 +244,27 @@ class RealtimeDataService:
         
         while self._running:
             try:
-                tickers_subs = [k for k in self.manager.subscriptions.keys()
-                               if k.startswith("tickers:")]
-                
-                for sub_key in tickers_subs:
-                    parts = sub_key.split(":")
-                    if len(parts) < 2:
-                        continue
-                    
-                    exchange_name = parts[1]
-                    
+                tickers_subs = await self.manager.get_subscription_keys("tickers:")
+                exchanges = {
+                    sub_key.split(":", 2)[1]
+                    for sub_key in tickers_subs
+                    if len(sub_key.split(":", 2)) >= 2
+                }
+
+                async def _publish_exchange(exchange_name: str):
+                    exchange = exchange_manager.get_exchange(exchange_name)
+                    if not exchange:
+                        return
                     try:
-                        exchange = exchange_manager.get_exchange(exchange_name)
-                        if exchange:
-                            all_tickers = exchange.fetch_tickers(BATCH_SYMBOLS)
-                            if all_tickers:
-                                await self.manager.broadcast(
-                                    "tickers", exchange_name, "*", all_tickers
-                                )
+                        all_tickers = await asyncio.to_thread(exchange.fetch_tickers, BATCH_SYMBOLS)
+                        if all_tickers:
+                            await self.manager.broadcast("tickers", exchange_name, "*", all_tickers)
                     except Exception as e:
                         logger.warning(f"Failed to batch fetch tickers for {exchange_name}: {e}")
-                
+
+                if exchanges:
+                    await asyncio.gather(*(_publish_exchange(exchange_name) for exchange_name in exchanges))
                 await asyncio.sleep(3)  # 3秒批量更新一次
-                
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -268,41 +274,40 @@ class RealtimeDataService:
     async def _funding_loop(self):
         """资金费率推送循环"""
         from app.exchange import exchange_manager
-        
+
+        async def _publish_one(sub_key: str):
+            parts = sub_key.split(":", 2)
+            if len(parts) < 2:
+                return
+            exchange_name = parts[1]
+            symbol = parts[2] if len(parts) > 2 else None
+            exchange = exchange_manager.get_exchange(exchange_name)
+            if not exchange:
+                return
+            try:
+                if symbol:
+                    rate = await asyncio.to_thread(exchange.fetch_funding_rate, symbol)
+                    if rate:
+                        await self.manager.broadcast("funding", exchange_name, symbol, rate)
+                    return
+
+                rates = await asyncio.to_thread(exchange.fetch_funding_rates)
+                for rate in rates[:20]:
+                    await self.manager.broadcast(
+                        "funding",
+                        exchange_name,
+                        rate.get("symbol", ""),
+                        rate,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to fetch funding: {e}")
+
         while self._running:
             try:
-                funding_subs = [k for k in self.manager.subscriptions.keys()
-                               if k.startswith("funding:")]
-                
-                for sub_key in funding_subs:
-                    parts = sub_key.split(":")
-                    if len(parts) < 2:
-                        continue
-                    
-                    exchange_name = parts[1]
-                    symbol = parts[2] if len(parts) > 2 else None
-                    
-                    try:
-                        exchange = exchange_manager.get_exchange(exchange_name)
-                        if exchange:
-                            if symbol:
-                                rate = exchange.fetch_funding_rate(symbol)
-                                if rate:
-                                    await self.manager.broadcast(
-                                        "funding", exchange_name, symbol, rate
-                                    )
-                            else:
-                                rates = exchange.fetch_funding_rates()
-                                for rate in rates[:20]:  # 限制数量
-                                    await self.manager.broadcast(
-                                        "funding", exchange_name, 
-                                        rate.get('symbol', ''), rate
-                                    )
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch funding: {e}")
-                
+                funding_subs = await self.manager.get_subscription_keys("funding:")
+                if funding_subs:
+                    await asyncio.gather(*(_publish_one(sub_key) for sub_key in funding_subs))
                 await asyncio.sleep(30)  # 30秒更新一次
-                
             except asyncio.CancelledError:
                 break
             except Exception as e:

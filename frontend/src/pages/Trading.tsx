@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
-import { 
+import {
   RefreshCw, 
   ArrowUpCircle, ArrowDownCircle, X, AlertTriangle, Wallet, ArrowRightLeft,
   Clock, List, Landmark, Briefcase,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
-import { marketApi } from '../api/client';
+import { marketApi, tradingApi } from '../api/client';
 import { useTickerWebSocket } from '../hooks/useWebSocket';
 import SymbolSearch from '../components/SymbolSearch';
-import axios from 'axios';
 import clsx from 'clsx';
 import type { Ticker } from '../types';
 
@@ -17,6 +16,15 @@ interface Balance {
   free: number;
   used: number;
   total: number;
+}
+
+function extractApiError(error: any): string {
+  const envelopeMessage = error?.response?.data?.error?.message;
+  const detail = error?.response?.data?.detail;
+  if (typeof envelopeMessage === 'string' && envelopeMessage.length > 0) return envelopeMessage;
+  if (typeof detail === 'string' && detail.length > 0) return detail;
+  if (detail && typeof detail === 'object') return JSON.stringify(detail);
+  return error?.message || '请求失败';
 }
 
 export default function Trading() {
@@ -74,21 +82,21 @@ export default function Trading() {
   const fetchAccountData = async () => {
     setLoading(true);
     try {
-      const [balanceRes, detailRes, ordersRes] = await Promise.all([
-        axios.get(`/api/v1/trading/balance?exchange=${selectedExchange}`),
-        axios.get(`/api/v1/trading/balance/detail?exchange=${selectedExchange}`).catch(() => ({ data: { trading: [], funding: [] } })),
-        axios.get(`/api/v1/trading/orders/open?exchange=${selectedExchange}`).catch(() => ({ data: { orders: [] } })),
+      const [balancePayload, detailPayload, ordersPayload] = await Promise.all([
+        tradingApi.getBalance(selectedExchange),
+        tradingApi.getBalanceDetail(selectedExchange).catch(() => ({ exchange: selectedExchange, trading: [], funding: [] })),
+        tradingApi.getOpenOrders(selectedExchange).catch(() => ({ exchange: selectedExchange, orders: [] })),
       ]);
-      
-      setBalances(balanceRes.data.balance || []);
+
+      setBalances(balancePayload.balance || []);
       setBalanceDetail({
-        trading: detailRes.data.trading || [],
-        funding: detailRes.data.funding || [],
+        trading: detailPayload.trading || [],
+        funding: detailPayload.funding || [],
       });
-      setOpenOrders(ordersRes.data.orders || []);
-    } catch (error: any) {
+      setOpenOrders(ordersPayload.orders || []);
+    } catch (error) {
       console.error('Failed to fetch account data:', error);
-      const detail = error.response?.data?.detail || '';
+      const detail = extractApiError(error);
       if (detail.includes('apiKey') || detail.includes('credential')) {
         setMessage({ type: 'error', text: `${selectedExchange.toUpperCase()} 未配置 API Key，请在 .env 中配置后重启后端` });
       }
@@ -103,18 +111,17 @@ export default function Trading() {
   const transferToTrading = async (currency: string, amount: number) => {
     setTransferLoading(true);
     try {
-      await axios.post('/api/v1/trading/transfer', {
+      await tradingApi.transfer({
         exchange: selectedExchange,
         currency,
         amount,
-        from_account: 'funding',
-        to_account: 'trading',
+        fromAccount: 'funding',
+        toAccount: 'trading',
       });
       setMessage({ type: 'success', text: `已将 ${amount} ${currency} 从资金账户划转到交易账户` });
       fetchAccountData();
-    } catch (error: any) {
-      const detail = error.response?.data?.detail || error.message || '划转失败';
-      setMessage({ type: 'error', text: typeof detail === 'string' ? detail : JSON.stringify(detail) });
+    } catch (error) {
+      setMessage({ type: 'error', text: extractApiError(error) });
     } finally {
       setTransferLoading(false);
     }
@@ -142,10 +149,10 @@ export default function Trading() {
     setMessage(null);
 
     try {
-      let response;
+      let response: { order: any; warnings?: string[] };
       
       if (orderType === 'spot') {
-        response = await axios.post('/api/v1/trading/spot/order', {
+        response = await tradingApi.spotOrder({
           exchange: selectedExchange,
           symbol: selectedSymbol,
           side,
@@ -159,7 +166,7 @@ export default function Trading() {
           ? selectedSymbol 
           : `${selectedSymbol}:USDT`;
         
-        response = await axios.post('/api/v1/trading/futures/order', {
+        response = await tradingApi.futuresOrder({
           exchange: selectedExchange,
           symbol: futuresSymbol,
           side: side === 'buy' ? 'long' : 'short',
@@ -170,15 +177,14 @@ export default function Trading() {
         });
       }
 
-      if (response.data.success) {
+      if (response?.order) {
         setMessage({ type: 'success', text: '下单成功！' });
         setAmount('');
         setPrice('');
         fetchAccountData();
       }
-    } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || error.message || '下单失败';
-      setMessage({ type: 'error', text: typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg) });
+    } catch (error) {
+      setMessage({ type: 'error', text: extractApiError(error) });
     } finally {
       setOrderLoading(false);
     }
@@ -187,11 +193,11 @@ export default function Trading() {
   // 撤单
   const cancelOrder = async (orderId: string, symbol: string) => {
     try {
-      await axios.delete(`/api/v1/trading/order/${orderId}?exchange=${selectedExchange}&symbol=${symbol}`);
+      await tradingApi.cancelOrder(orderId, selectedExchange, symbol);
       setMessage({ type: 'success', text: '撤单成功' });
       fetchAccountData();
     } catch (error) {
-      setMessage({ type: 'error', text: '撤单失败' });
+      setMessage({ type: 'error', text: extractApiError(error) });
     }
   };
 
@@ -245,8 +251,8 @@ export default function Trading() {
   const fetchOrderHistory = async () => {
     setHistoryLoading(true);
     try {
-      const res = await axios.get(`/api/v1/trading/orders/history?exchange=${selectedExchange}&limit=50`);
-      setOrderHistory(res.data.orders || []);
+      const payload = await tradingApi.getOrderHistory(selectedExchange, 50);
+      setOrderHistory(payload.orders || []);
     } catch (err) {
       console.error('获取历史订单失败:', err);
     } finally {

@@ -5,7 +5,7 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { marketApi, healthApi } from '../api/client';
 import { useNavigate } from 'react-router-dom';
 import { TOP50_SYMBOLS } from '../components/SymbolSearch';
-import { useTickersWebSocket } from '../hooks/useWebSocket';
+import { useTickersWebSocket, type RealtimeTicker } from '../hooks/useWebSocket';
 
 // 币种图标颜色映射
 const COIN_COLORS: Record<string, string> = {
@@ -215,9 +215,12 @@ export default function Home() {
   };
 
   // 将原始 ticker 数据转为展示数据
-  const mapTickerData = useCallback((tickersData: any[]): TickerData[] => {
-    return tickersData.map((t: any) => {
+  const mapTickerData = useCallback((tickersData: RealtimeTicker[]): TickerData[] => {
+    return tickersData.map((t) => {
       const coin = t.symbol.split('/')[0];
+      const last = t.last ?? 0;
+      const high = t.high ?? last;
+      const low = t.low ?? last;
       const changePct = t.changePercent ?? t.change_percent ?? 0;
       const quoteVol = t.quoteVolume ?? t.quote_volume ?? 0;
 
@@ -225,9 +228,9 @@ export default function Home() {
       const cached = sparklineCache.current[t.symbol];
       let sparkline: number[];
       if (cached && cached.length >= 2) {
-        sparkline = [...cached.slice(-23), t.last]; // 保留最近24个点
+        sparkline = [...cached.slice(-23), last]; // 保留最近24个点
       } else {
-        sparkline = generateSparkline(t.low, t.high, t.last, changePct);
+        sparkline = generateSparkline(low, high, last, changePct);
       }
       sparklineCache.current[t.symbol] = sparkline;
 
@@ -235,10 +238,10 @@ export default function Home() {
         symbol: t.symbol,
         coin,
         name: COIN_NAMES[coin] || coin,
-        last: t.last,
+        last,
         change_percent: changePct,
-        high: t.high || t.last,
-        low: t.low || t.last,
+        high,
+        low,
         volume: t.volume || 0,
         quote_volume: quoteVol,
         sparkline,
@@ -251,7 +254,7 @@ export default function Home() {
   const fetchAllTickers = useCallback(async () => {
     try {
       const tickersData = await marketApi.getTickers(selectedExchange, HOT_SYMBOLS);
-      const items = mapTickerData(tickersData as any[]);
+      const items = mapTickerData(tickersData as RealtimeTicker[]);
       setTickers(items);
     } catch (err) {
       console.error('Failed to fetch tickers:', err);
@@ -278,7 +281,7 @@ export default function Home() {
   // WebSocket 实时更新：当收到 wsTickers 数据时，更新列表
   useEffect(() => {
     if (wsTickers && wsTickers.length > 0) {
-      const items = mapTickerData(wsTickers as any[]);
+      const items = mapTickerData(wsTickers);
       if (items.length > 0) {
         setTickers(items);
         setLoading(false);

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 
-const api = axios.create({ baseURL: '/api/v1', timeout: 120000 });
+const api = axios.create({ baseURL: '/api/v2', timeout: 120000 });
 api.interceptors.response.use((r) => r.data, (e) => Promise.reject(e));
 
 /* ---------- types ---------- */

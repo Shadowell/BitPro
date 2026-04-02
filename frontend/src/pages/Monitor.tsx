@@ -4,8 +4,8 @@ import {
   BarChart3,
   RefreshCw, Zap, DollarSign, Eye,
 } from 'lucide-react';
-import axios from 'axios';
 import clsx from 'clsx';
+import { marketApi, monitorApi } from '../api/client';
 
 interface Alert {
   id: number;
@@ -19,13 +19,13 @@ interface Alert {
 }
 
 interface RunningStrategy {
-  strategy_id: number;
+  strategyId: number;
   name: string;
   status: string;
   exchange: string;
   symbols: string[];
   pnl: number;
-  total_trades: number;
+  totalTrades: number;
 }
 
 interface MarketSentiment {
@@ -60,11 +60,17 @@ export default function Monitor() {
   }, []);
 
   const fetchAlerts = async () => {
-    try { const r = await axios.get('/api/v1/monitor/alerts'); setAlerts(r.data); } catch {}
+    try {
+      const data = await monitorApi.getAlerts();
+      setAlerts(data);
+    } catch {}
   };
 
   const fetchRunningStrategies = async () => {
-    try { const r = await axios.get('/api/v1/monitor/running-strategies'); setRunningStrategies(r.data); } catch {}
+    try {
+      const data = await monitorApi.getRunningStrategies();
+      setRunningStrategies(data);
+    } catch {}
   };
 
   const fetchMarketSentiment = async () => {
@@ -72,15 +78,15 @@ export default function Monitor() {
     try {
       // 并行请求多个数据源
       const [lsRes, oiRes, _frRes] = await Promise.allSettled([
-        axios.get('/api/v1/monitor/long-short-ratio?exchange=okx&symbol=BTC/USDT:USDT'),
-        axios.get('/api/v1/monitor/open-interest?exchange=okx&symbol=BTC/USDT:USDT'),
-        axios.get('/api/v1/market/ticker?exchange=okx&symbol=BTC/USDT'),
+        monitorApi.getLongShortRatio('okx', 'BTC/USDT:USDT'),
+        monitorApi.getOpenInterest('okx', 'BTC/USDT:USDT'),
+        marketApi.getTicker('okx', 'BTC/USDT'),
       ]);
 
       setSentiment({
-        longShortRatio: lsRes.status === 'fulfilled' ? (lsRes.value.data.ratio ?? lsRes.value.data.long_short_ratio ?? null) : null,
-        openInterest: oiRes.status === 'fulfilled' ? (oiRes.value.data.openInterest ?? oiRes.value.data.open_interest ?? null) : null,
-        openInterestChange: oiRes.status === 'fulfilled' ? (oiRes.value.data.change ?? oiRes.value.data.change_pct ?? null) : null,
+        longShortRatio: lsRes.status === 'fulfilled' ? (lsRes.value.ratio ?? lsRes.value.longShortRatio ?? null) : null,
+        openInterest: oiRes.status === 'fulfilled' ? (oiRes.value.openInterest ?? null) : null,
+        openInterestChange: oiRes.status === 'fulfilled' ? (oiRes.value.change ?? oiRes.value.changePct ?? null) : null,
         fundingRate: null, // 后续可扩展
         fearGreedIndex: null,
       });
@@ -93,19 +99,33 @@ export default function Monitor() {
 
   const createAlert = async () => {
     try {
-      await axios.post('/api/v1/monitor/alert', alertForm);
+      await monitorApi.createAlert({
+        name: alertForm.name,
+        type: alertForm.type,
+        exchange: alertForm.exchange,
+        symbol: alertForm.symbol,
+        threshold: alertForm.threshold,
+        telegramBotToken: alertForm.telegram_bot_token || undefined,
+        telegramChatId: alertForm.telegram_chat_id || undefined,
+      });
       setShowCreateAlert(false); fetchAlerts();
       setAlertForm({ name: '', type: 'price_above', exchange: 'okx', symbol: 'BTC/USDT', threshold: 100000, telegram_bot_token: '', telegram_chat_id: '' });
     } catch {}
   };
 
   const toggleAlert = async (id: number, enabled: boolean) => {
-    try { await axios.put(`/api/v1/monitor/alert/${id}?enabled=${!enabled}`); fetchAlerts(); } catch {}
+    try {
+      await monitorApi.toggleAlert(id, !enabled);
+      fetchAlerts();
+    } catch {}
   };
 
   const deleteAlert = async (id: number) => {
     if (!confirm('确定删除此告警?')) return;
-    try { await axios.delete(`/api/v1/monitor/alert/${id}`); fetchAlerts(); } catch {}
+    try {
+      await monitorApi.deleteAlert(id);
+      fetchAlerts();
+    } catch {}
   };
 
   const alertTypeLabels: Record<string, string> = {
@@ -147,7 +167,7 @@ export default function Monitor() {
           value={String(runningStrategies.length)}
           icon={<Activity className="w-4 h-4" />}
           color={runningStrategies.length > 0 ? 'green' : 'gray'}
-          sub={runningStrategies.length > 0 ? `${runningStrategies.reduce((s, r) => s + r.total_trades, 0)} 笔交易` : '暂无运行'}
+          sub={runningStrategies.length > 0 ? `${runningStrategies.reduce((s, r) => s + r.totalTrades, 0)} 笔交易` : '暂无运行'}
         />
         <SentimentCard
           label="活跃告警"
@@ -170,7 +190,7 @@ export default function Monitor() {
             {runningStrategies.length > 0 ? (
               <div className="space-y-3">
                 {runningStrategies.map(s => (
-                  <div key={s.strategy_id} className="bg-crypto-bg rounded-xl p-4">
+                  <div key={s.strategyId} className="bg-crypto-bg rounded-xl p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -183,7 +203,7 @@ export default function Monitor() {
                     <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-500">
                       <span className="px-1.5 py-0.5 bg-gray-800 rounded">{s.exchange?.toUpperCase()}</span>
                       {s.symbols?.map(sym => <span key={sym}>{sym}</span>)}
-                      <span className="ml-auto">{s.total_trades} 笔交易</span>
+                      <span className="ml-auto">{s.totalTrades} 笔交易</span>
                     </div>
                   </div>
                 ))}

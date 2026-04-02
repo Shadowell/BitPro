@@ -6,9 +6,8 @@ import {
   Eye, Loader2, Wallet, FlaskConical, Radio, Plus,
 } from 'lucide-react';
 import * as echarts from 'echarts';
-import { liveApi, paperApi } from '../api/client';
+import { liveApi, paperApi, tradingApi } from '../api/client';
 import { useStore } from '../stores/useStore';
-import axios from 'axios';
 import clsx from 'clsx';
 
 // ============================================
@@ -201,8 +200,8 @@ export default function LiveTrading() {
   const fetchBalance = async () => {
     setBalanceLoading(true);
     try {
-      const res = await axios.get(`/api/v1/trading/balance?exchange=${selectedExchange}`);
-      setBalances(res.data.balance || []);
+      const payload = await tradingApi.getBalance(selectedExchange);
+      setBalances(payload.balance || []);
     } catch (err) {
       console.error('获取余额失败:', err);
     } finally {

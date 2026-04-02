@@ -11,6 +11,26 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BACKEND_DIR="$PROJECT_DIR/backend"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
 REPORT_FILE="$SCRIPT_DIR/test_report.txt"
+CORE_ONLY=false
+
+for arg in "$@"; do
+    case $arg in
+        --core-only)
+            CORE_ONLY=true
+            ;;
+        -h|--help)
+            echo "用法: bash run_tests.sh [--core-only]"
+            echo ""
+            echo "选项:"
+            echo "  --core-only   仅执行本地核心验收（不依赖外网/交易所）"
+            exit 0
+            ;;
+    esac
+done
+
+if [ "$CORE_ONLY" = true ]; then
+    exec "$SCRIPT_DIR/run_core_tests.sh"
+fi
 
 # 颜色
 RED='\033[0;31m'
@@ -61,6 +81,17 @@ TOTAL_PASS=0
 TOTAL_FAIL=0
 TOTAL_SKIP=0
 BUGS=""
+ENV_ISSUES=""
+APP_ISSUES=""
+
+classify_failure() {
+    local details="$1"
+    if echo "$details" | grep -Eqi "Connection refused|ConnectError|Timeout|proxy|load_markets failed|network|not configured"; then
+        echo "env"
+    else
+        echo "app"
+    fi
+}
 
 run_module() {
     local module_name="$1"
@@ -95,6 +126,11 @@ run_module() {
         # 提取失败详情（FAILED行 + AssertionError + assert行 + 实际错误内容）
         fail_details=$(echo "$output" | grep -E "^FAILED|Assertion|assert |Error:|error TS" | head -30)
         BUGS="${BUGS}\n--- ${module_name} ---\n${fail_details}\n"
+        if [ "$(classify_failure "$output")" = "env" ]; then
+            ENV_ISSUES="${ENV_ISSUES}\n--- ${module_name} ---\n${fail_details}\n"
+        else
+            APP_ISSUES="${APP_ISSUES}\n--- ${module_name} ---\n${fail_details}\n"
+        fi
         # 完整输出保留给报告
         echo "====== ${module_name} ======" >> "$REPORT_FILE.detail"
         echo "$output" >> "$REPORT_FILE.detail"
@@ -150,6 +186,11 @@ if [ "$E2E_FAILED" -gt 0 ]; then
     # 提取失败测试名
     E2E_FAILURES=$(echo "$E2E_OUTPUT" | grep -E "✘|FAIL|failed|Error" | head -30)
     BUGS="${BUGS}\n--- E2E页面交互 ---\n${E2E_FAILURES}\n"
+    if [ "$(classify_failure "$E2E_OUTPUT")" = "env" ]; then
+        ENV_ISSUES="${ENV_ISSUES}\n--- E2E页面交互 ---\n${E2E_FAILURES}\n"
+    else
+        APP_ISSUES="${APP_ISSUES}\n--- E2E页面交互 ---\n${E2E_FAILURES}\n"
+    fi
     echo "====== E2E页面交互 ======" >> "$REPORT_FILE.detail"
     echo "$E2E_OUTPUT" >> "$REPORT_FILE.detail"
     echo "" >> "$REPORT_FILE.detail"
@@ -167,6 +208,16 @@ echo -e "  ${RED}失败: ${TOTAL_FAIL}${NC}"
 echo -e "  ${YELLOW}跳过: ${TOTAL_SKIP}${NC}"
 TOTAL=$((TOTAL_PASS + TOTAL_FAIL + TOTAL_SKIP))
 echo -e "  总计: ${TOTAL}"
+if [ -n "$ENV_ISSUES" ]; then
+    echo -e "  ${YELLOW}环境依赖问题: 有${NC}"
+else
+    echo -e "  ${GREEN}环境依赖问题: 无${NC}"
+fi
+if [ -n "$APP_ISSUES" ]; then
+    echo -e "  ${YELLOW}业务逻辑问题: 有${NC}"
+else
+    echo -e "  ${GREEN}业务逻辑问题: 无${NC}"
+fi
 
 # 写入报告文件
 {
@@ -188,6 +239,12 @@ if [ "$TOTAL_FAIL" -gt 0 ]; then
         echo ""
         echo "====== BUG 清单 ======"
         echo -e "$BUGS"
+        echo ""
+        echo "====== 环境依赖问题 ======"
+        echo -e "$ENV_ISSUES"
+        echo ""
+        echo "====== 业务逻辑问题 ======"
+        echo -e "$APP_ISSUES"
     } >> "$REPORT_FILE"
 
     echo ""

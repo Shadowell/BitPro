@@ -1,15 +1,18 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { websocketManager, type WSMessage } from '../services/websocketManager';
 
-type MessageHandler = (data: WebSocketMessage) => void;
+type MessageHandler = (data: WSMessage) => void;
 
-interface WebSocketMessage {
-  type?: string;
-  channel?: string;
-  exchange?: string;
-  symbol?: string;
-  data?: unknown;
-  timestamp?: number;
-  message?: string;
+export interface RealtimeTicker {
+  symbol: string;
+  last: number;
+  high?: number;
+  low?: number;
+  volume?: number;
+  quoteVolume?: number;
+  quote_volume?: number;
+  changePercent?: number;
+  change_percent?: number;
 }
 
 interface UseWebSocketOptions {
@@ -18,13 +21,11 @@ interface UseWebSocketOptions {
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: Event) => void;
-  reconnectAttempts?: number;
-  reconnectInterval?: number;
 }
 
 interface UseWebSocketReturn {
   isConnected: boolean;
-  lastMessage: WebSocketMessage | null;
+  lastMessage: WSMessage | null;
   subscribe: (channel: string, exchange: string, symbol?: string) => void;
   unsubscribe: (channel: string, exchange: string, symbol?: string) => void;
   sendMessage: (message: Record<string, unknown>) => void;
@@ -32,129 +33,51 @@ interface UseWebSocketReturn {
 
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
   const {
-    url = `ws://${window.location.host}/api/v1/ws`,
+    url = `ws://${window.location.host}/api/v2/ws`,
     onMessage,
     onConnect,
     onDisconnect,
-    onError,
-    reconnectAttempts = 5,
-    reconnectInterval = 3000,
   } = options;
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectCountRef = useRef(0);
   const [isConnected, setIsConnected] = useState(false);
-  const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
+  const [lastMessage, setLastMessage] = useState<WSMessage | null>(null);
 
-  // 连接 WebSocket
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      return;
-    }
+  useEffect(() => {
+    websocketManager.connect(url);
 
-    try {
-      const ws = new WebSocket(url);
+    const handler = (msg: WSMessage) => {
+      setLastMessage(msg);
 
-      ws.onopen = () => {
-        console.log('WebSocket connected');
+      if (msg.event === 'connected' || msg.type === 'connected') {
         setIsConnected(true);
-        reconnectCountRef.current = 0;
         onConnect?.();
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as WebSocketMessage;
-          setLastMessage(data);
-          onMessage?.(data);
-        } catch (e) {
-          console.error('Failed to parse WebSocket message:', e);
-        }
-      };
-
-      ws.onclose = () => {
-        console.log('WebSocket disconnected');
+      } else if (msg.event === 'disconnected' || msg.type === 'disconnected') {
         setIsConnected(false);
         onDisconnect?.();
+      }
 
-        // 自动重连
-        if (reconnectCountRef.current < reconnectAttempts) {
-          reconnectCountRef.current++;
-          console.log(`Reconnecting... (${reconnectCountRef.current}/${reconnectAttempts})`);
-          setTimeout(connect, reconnectInterval);
-        }
-      };
+      onMessage?.(msg);
+    };
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        onError?.(error);
-      };
+    websocketManager.addHandler(handler);
+    setIsConnected(websocketManager.isConnected());
 
-      wsRef.current = ws;
-    } catch (e) {
-      console.error('Failed to create WebSocket:', e);
-    }
-  }, [url, onConnect, onDisconnect, onError, onMessage, reconnectAttempts, reconnectInterval]);
+    return () => {
+      websocketManager.removeHandler(handler);
+    };
+  }, [url, onMessage, onConnect, onDisconnect]);
 
-  // 断开连接
-  const disconnect = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-  }, []);
-
-  // 发送消息
   const sendMessage = useCallback((message: Record<string, unknown>) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-    } else {
-      console.warn('WebSocket is not connected');
-    }
+    websocketManager.send(message);
   }, []);
 
-  // 订阅频道
-  const subscribe = useCallback(
-    (channel: string, exchange: string, symbol?: string) => {
-      sendMessage({
-        action: 'subscribe',
-        channel,
-        exchange,
-        symbol,
-      });
-    },
-    [sendMessage]
-  );
+  const subscribe = useCallback((channel: string, exchange: string, symbol?: string) => {
+    websocketManager.subscribe(channel, exchange, symbol);
+  }, []);
 
-  // 取消订阅
-  const unsubscribe = useCallback(
-    (channel: string, exchange: string, symbol?: string) => {
-      sendMessage({
-        action: 'unsubscribe',
-        channel,
-        exchange,
-        symbol,
-      });
-    },
-    [sendMessage]
-  );
-
-  // 心跳
-  useEffect(() => {
-    if (!isConnected) return;
-
-    const interval = setInterval(() => {
-      sendMessage({ action: 'ping' });
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [isConnected, sendMessage]);
-
-  // 初始化连接
-  useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
+  const unsubscribe = useCallback((channel: string, exchange: string, symbol?: string) => {
+    websocketManager.unsubscribe(channel, exchange, symbol);
+  }, []);
 
   return {
     isConnected,
@@ -165,14 +88,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   };
 }
 
-// 专用于 Ticker 的 Hook
 export function useTickerWebSocket(exchange: string, symbol: string) {
-  const [ticker, setTicker] = useState<Record<string, unknown> | null>(null);
+  const [ticker, setTicker] = useState<RealtimeTicker | null>(null);
 
   const { isConnected, subscribe, unsubscribe } = useWebSocket({
     onMessage: (msg) => {
       if (msg.channel === 'ticker' && msg.symbol === symbol) {
-        setTicker(msg.data as Record<string, unknown>);
+        setTicker(msg.data as RealtimeTicker);
       }
     },
   });
@@ -182,24 +104,23 @@ export function useTickerWebSocket(exchange: string, symbol: string) {
       subscribe('ticker', exchange, symbol);
       return () => unsubscribe('ticker', exchange, symbol);
     }
+    return undefined;
   }, [isConnected, exchange, symbol, subscribe, unsubscribe]);
 
   return { ticker, isConnected };
 }
 
-// 专用于批量 Ticker 的 Hook（首页用，订阅所有主流交易对）
 export function useTickersWebSocket(exchange: string) {
-  const [tickers, setTickers] = useState<Record<string, unknown>[]>([]);
+  const [tickers, setTickers] = useState<RealtimeTicker[]>([]);
 
   const { isConnected, subscribe, unsubscribe } = useWebSocket({
     onMessage: (msg) => {
       if (msg.channel === 'tickers' && msg.exchange === exchange) {
         const data = msg.data;
         if (Array.isArray(data)) {
-          setTickers(data);
+          setTickers(data as RealtimeTicker[]);
         } else if (data && typeof data === 'object') {
-          // 如果返回的是 object（symbol -> ticker），转成数组
-          setTickers(Object.values(data as Record<string, unknown>) as Record<string, unknown>[]);
+          setTickers(Object.values(data as Record<string, RealtimeTicker>));
         }
       }
     },
@@ -210,12 +131,12 @@ export function useTickersWebSocket(exchange: string) {
       subscribe('tickers', exchange);
       return () => unsubscribe('tickers', exchange);
     }
+    return undefined;
   }, [isConnected, exchange, subscribe, unsubscribe]);
 
   return { tickers, isConnected };
 }
 
-// 专用于资金费率的 Hook
 export function useFundingWebSocket(exchange: string) {
   const [fundingRates, setFundingRates] = useState<Map<string, unknown>>(new Map());
 
@@ -236,6 +157,7 @@ export function useFundingWebSocket(exchange: string) {
       subscribe('funding', exchange);
       return () => unsubscribe('funding', exchange);
     }
+    return undefined;
   }, [isConnected, exchange, subscribe, unsubscribe]);
 
   return { fundingRates: Array.from(fundingRates.values()), isConnected };

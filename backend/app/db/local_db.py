@@ -11,6 +11,7 @@ import sqlite3
 import os
 import json
 import threading
+from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 import platform
@@ -29,13 +30,9 @@ class LocalDatabase:
             if settings.DB_PATH:
                 db_path = settings.DB_PATH
             else:
-                # 根据系统选择默认路径
-                if platform.system() == "Darwin":  # macOS
-                    db_path = os.path.expanduser("~/Library/Application Support/BitPro/crypto_data.db")
-                elif platform.system() == "Windows":
-                    db_path = os.path.expanduser("~/AppData/Roaming/BitPro/crypto_data.db")
-                else:  # Linux
-                    db_path = os.path.expanduser("~/.local/share/BitPro/crypto_data.db")
+                # 默认使用项目目录内的 data，避免系统目录权限导致启动失败
+                project_root = Path(__file__).resolve().parents[3]
+                db_path = str(project_root / "data" / "crypto_data.db")
         
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.db_path = db_path

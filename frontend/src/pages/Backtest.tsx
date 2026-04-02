@@ -5,7 +5,7 @@ import {
   Calendar, List,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
-import axios from 'axios';
+import { backtestApi, marketApi } from '../api/client';
 import * as echarts from 'echarts';
 import clsx from 'clsx';
 
@@ -101,29 +101,25 @@ export default function Backtest() {
     setIsRunning(true);
     setResult(null);
     try {
-      const response = await axios.post('/api/v1/backtest/run_sync', {
+      const response = await backtestApi.runSync({
         strategy_id: selectedStrategy, exchange: 'okx', symbol, timeframe,
         start_date: startDate, end_date: endDate, initial_capital: initialCapital,
         commission, slippage: 0.0001,
       });
-      setResult(response.data);
+      setResult(response);
       setResultTab('overview');
       setTimeRange('all');
       // 获取真实买入持有基准数据 (覆盖回测完整区间)
       try {
-        const startTs = new Date(startDate).getTime();
-        const endTs = new Date(endDate).getTime();
-        const klinesRes = await axios.get('/api/v1/market/klines', {
-          params: { exchange: 'okx', symbol, timeframe: '1d', limit: 1000, start: startTs, end: endTs },
-        });
-        const klines = (klinesRes.data || []).map((k: any) => ({
+        const klinesRes = await marketApi.getKlines('okx', symbol, '1d', 1000);
+        const klines = (klinesRes || []).map((k: any) => ({
           timestamp: k.timestamp, close: k.close,
         }));
         setBenchmarkKlines(klines);
       } catch { setBenchmarkKlines([]); }
     } catch (error: any) {
       console.error('Backtest failed:', error);
-      alert('回测失败: ' + (error.response?.data?.detail || error.message));
+      alert('回测失败: ' + (error.response?.data?.error?.message || error.response?.data?.detail || error.message));
     } finally {
       setIsRunning(false);
     }
