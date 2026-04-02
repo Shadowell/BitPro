@@ -12,6 +12,62 @@
 | AI Agent | 通义千问 Qwen (OpenAI 兼容 API) · 多 Agent 闭环架构 |
 | 运维 | Bash 脚本一键启停 · 日志轮转 · 健康检查 |
 
+## 模块截图
+
+### 首页看板
+
+> 全市场行情总览，支持现货/币币/合约分类筛选，内置热门、DeFi、公链、Meme、AI 等板块标签，实时展示币种价格、24h 涨跌幅、成交额和价格走势，支持自选收藏和搜索。
+
+![首页看板](docs/screenshots/01-home.png)
+
+### 行情监控
+
+> 专业级 K 线图表和订单簿深度图，支持 BTC/USDT 等主流交易对，提供 1m/5m/15m/1h/4h/1d 多个时间周期切换，WebSocket 实时推送最新价格和涨跌变动。
+
+![行情监控](docs/screenshots/02-market.png)
+
+### 交易下单
+
+> 支持限价/市价下单，展示现货和合约账户余额，持仓管理、当前挂单和历史订单查询，买入/卖出比例滑块快捷操作。
+
+![交易下单](docs/screenshots/03-trading.png)
+
+### 策略中心
+
+> 策略管理面板，展示所有策略的状态、绑定交易对、收益情况，支持策略启停控制、参数配置、脚本编辑和新建策略。
+
+![策略中心](docs/screenshots/04-strategy.png)
+
+### 策略回测
+
+> 自研 v2 回测引擎，逐 bar 模拟交易，30+ 技术指标内置，输出完整绩效报告：夏普比率、最大回撤、胜率、盈亏比、资金曲线等。
+
+![策略回测](docs/screenshots/05-backtest.png)
+
+### 模拟盘 / 实盘交易
+
+> 策略实盘运行面板，支持模拟盘验证后再切换实盘上线，展示策略运行状态、持仓和实时收益。
+
+![模拟盘/实盘](docs/screenshots/06-live.png)
+
+### 监控中心
+
+> 系统状态仪表盘，交易所连接状态、策略运行监控、风控告警、系统资源占用，支持 Telegram 告警推送。
+
+![监控中心](docs/screenshots/07-monitor.png)
+
+### 数据管理中心
+
+> K 线历史数据同步管理，资金费率归档，支持按交易对、时间范围查询和数据导出，展示数据覆盖率和同步进度。
+
+![数据管理](docs/screenshots/08-data.png)
+
+### AI 策略研发 (v2 Multi-Agent)
+
+> GAN-inspired 多 Agent 闭环系统：Planner 规格书 → Sprint 合约协商 → Strategist 生成 → Backtester 回测 → Evaluator 独立评估，循环迭代直至达标。支持 5 维度雷达图评分、方向决策 (Pivot/Refine)、合约验收。
+
+![AI策略研发](docs/screenshots/09-ailab.png)
+
 ## 功能模块
 
 ### 行情与交易
