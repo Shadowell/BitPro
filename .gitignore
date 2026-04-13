@@ -51,6 +51,9 @@ logs/
 *.sqlite
 *.sqlite3
 
+# === 保留种子数据 ===
+!data/seed/
+
 # === 测试 ===
 test-results/
 .pytest_cache/

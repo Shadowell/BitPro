@@ -1,0 +1,213 @@
+[
+  {
+    "name": "双均线策略 (Dual MA)",
+    "description": "经典双均线金叉/死叉策略。短期均线上穿长期均线时买入，下穿时卖出。适合趋势行情，推荐日线周期。",
+    "strategy_key": "dual_ma",
+    "config": {
+      "strategy_key": "dual_ma",
+      "fast_period": 7,
+      "slow_period": 25,
+      "position_size": 0.01
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": "dual_ma_strategy.py"
+  },
+  {
+    "name": "RSI超卖反弹策略",
+    "description": "基于RSI(14)指标的超卖反弹策略。RSI<30时买入，RSI>70时卖出。适合震荡行情，推荐日线周期。",
+    "strategy_key": "rsi_oversold",
+    "config": {
+      "strategy_key": "rsi_oversold",
+      "rsi_period": 14,
+      "oversold": 30,
+      "overbought": 70
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "布林带均值回归策略",
+    "description": "布林带(20,2)均值回归策略。价格触及下轨时买入，触及上轨时卖出。适合震荡行情，推荐日线周期。",
+    "strategy_key": "bollinger_reversion",
+    "config": {
+      "strategy_key": "bollinger_reversion",
+      "bb_period": 20,
+      "bb_std": 2.0
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "MACD+RSI 多因子策略",
+    "description": "MACD柱状图与RSI组合的多因子策略。MACD由负转正且RSI<60时买入，MACD由正转负或RSI>75时卖出。推荐日线周期。",
+    "strategy_key": "macd_rsi",
+    "config": {
+      "strategy_key": "macd_rsi"
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "Buy & Hold 基准策略",
+    "description": "买入并持有基准策略，用于对比其他策略的收益表现。首根K线即全仓买入并持有至结束。",
+    "strategy_key": "buy_and_hold",
+    "config": {
+      "strategy_key": "buy_and_hold"
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "自适应布林带策略",
+    "description": "Phase3高级策略。根据市场状态(趋势/震荡/高波动)自动切换布林带参数，趋势市用窄带(15,2.0)顺趋势，震荡市用宽带(30,2.5)均值回归，配合ATR动态仓位管理。推荐4h周期。",
+    "strategy_key": "adaptive_bollinger",
+    "config": {
+      "strategy_key": "adaptive_bollinger"
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "趋势跟踪策略",
+    "description": "Phase3高级趋势跟踪。EMA(20/50)多头排列确认趋势，突破20周期高点入场，内置ATR追踪止损和动态仓位管理。推荐4h周期。",
+    "strategy_key": "trend_following",
+    "config": {
+      "strategy_key": "trend_following",
+      "ema_fast": 20,
+      "ema_slow": 50
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "多策略组合引擎",
+    "description": "Phase3多策略组合。融合趋势跟踪和自适应布林带信号，根据市场状态自动切换权重，信号一致时加大仓位，矛盾时按市场状态决策。推荐4h周期。",
+    "strategy_key": "combo",
+    "config": {
+      "strategy_key": "combo"
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "智能趋势跟踪策略",
+    "description": "EMA(9/21/55)三重排列 + MACD柱状图确认 + RSI过滤。多头排列且MACD>0且RSI<70时买入，空头排列或MACD转负或RSI>75时卖出。推荐4h周期，8%止损。",
+    "strategy_key": "smart_trend",
+    "config": {
+      "strategy_key": "smart_trend",
+      "ema_fast": 9,
+      "ema_mid": 21,
+      "ema_slow": 55
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "均值回归策略(自动交易版)",
+    "description": "布林带%B + RSI极值反转策略。BB%B<0.05且RSI<30时超卖买入，到中轨止盈或超买反转卖出。推荐1h周期，5%止损。",
+    "strategy_key": "mean_reversion",
+    "config": {
+      "strategy_key": "mean_reversion"
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "动量突破策略",
+    "description": "唐奇安通道(20) + 成交量确认。价格突破20周期高点且成交量>均量1.5倍时买入，跌破下通道时卖出。推荐4h周期，8%止损。",
+    "strategy_key": "momentum_breakout",
+    "config": {
+      "strategy_key": "momentum_breakout",
+      "entry_period": 20,
+      "volume_mult": 1.5
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "高频剥头皮策略",
+    "description": "RSI(7)极值 + 布林带(10,2)偏离的短线剥头皮。RSI<20且价格低于下轨时买入，RSI>80或价格高于上轨时卖出。推荐15m周期，1.5%止损。",
+    "strategy_key": "scalping",
+    "config": {
+      "strategy_key": "scalping",
+      "rsi_low": 20,
+      "rsi_high": 80,
+      "vwap_dev": 0.01
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "多时间框架策略",
+    "description": "大周期(4h)确认趋势方向，小周期精准入场。大周期EMA多头排列时，小周期RSI回调+MACD金叉+KDJ超卖共振买入。推荐4h周期。",
+    "strategy_key": "multi_timeframe",
+    "config": {
+      "strategy_key": "multi_timeframe"
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "资金费率增强版",
+    "description": "永续合约资金费率套利策略。动态费率阈值 + 技术面RSI过滤，高费率时做空赚取费率收入，费率转负时平仓。推荐1h周期，3%止损。",
+    "strategy_key": "funding_rate_pro",
+    "config": {
+      "strategy_key": "funding_rate_pro",
+      "min_rate": 0.0001,
+      "high_rate": 0.0005,
+      "max_neg": -0.0002
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT:USDT"],
+    "script_file": "funding_arbitrage.py"
+  },
+  {
+    "name": "网格交易策略",
+    "description": "在价格区间内设置买卖网格，低买高卖。适合震荡行情，需要配置价格上下限和网格数量。",
+    "strategy_key": "grid_trading",
+    "config": {
+      "price_low": 90000,
+      "price_high": 100000,
+      "grid_num": 10,
+      "order_amount": 0.001
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": "grid_trading.py"
+  },
+  {
+    "name": "自适应布林带(实盘版)",
+    "description": "Phase3最优策略实盘桥接版。市场状态自适应 + 动态仓位 + 多层风控，Walk-Forward 75%一致性验证。推荐4h周期，BTC/ETH趋势+震荡行情。",
+    "strategy_key": "adaptive_bollinger_live",
+    "config": {
+      "strategy_key": "adaptive_bollinger_live"
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  },
+  {
+    "name": "趋势跟踪(实盘版)",
+    "description": "Phase3趋势跟踪实盘桥接版。EMA多头排列 + 突破入场 + ATR追踪止损，365天回测+16%收益。推荐4h周期，强趋势行情。",
+    "strategy_key": "trend_following_live",
+    "config": {
+      "strategy_key": "trend_following_live"
+    },
+    "exchange": "okx",
+    "symbols": ["BTC/USDT"],
+    "script_file": null
+  }
+]

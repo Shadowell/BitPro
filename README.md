@@ -140,6 +140,12 @@ BitPro/
 │       ├── components/        # K 线图、订单簿等组件
 │       ├── hooks/             # WebSocket hook
 │       └── stores/            # Zustand 状态管理
+├── strategies/                # 策略脚本示例 (可粘贴到策略编辑器)
+├── data/seed/                 # 种子数据 (17 个内置策略定义)
+├── scripts/
+│   ├── check.sh               # CI 检查
+│   └── seed_strategies.py     # 种子策略导入脚本
+├── init.sh                    # 首次初始化 (依赖+建表+导入策略)
 ├── start.sh                   # 一键启动
 ├── stop.sh                    # 一键停止
 ├── restart.sh                 # 重启
@@ -178,19 +184,27 @@ QWEN_API_KEY=your_qwen_api_key
 QWEN_MODEL=qwen3.5-flash
 ```
 
-### 2. 启动
+### 2. 首次初始化
+
+```bash
+./init.sh
+```
+
+自动完成：创建虚拟环境、安装前后端依赖、初始化数据库、导入 17 个内置量化策略。
+
+### 3. 启动
 
 ```bash
 ./start.sh
 ```
 
-首次启动会自动创建虚拟环境、安装依赖。启动完成后：
+启动完成后：
 
 - 前端: http://localhost:8888
 - 后端: http://localhost:8889
 - API 文档: http://localhost:8889/docs
 
-### 3. 运维命令
+### 4. 运维命令
 
 ```bash
 ./status.sh          # 查看服务状态
